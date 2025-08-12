@@ -55,8 +55,8 @@ class QdeMcpServer {
       return {
         tools: [
           {
-            name: 'search-trade-reference-data',
-            description: 'Search and retrieve trading reference data: find companies by name (like "ABC Trading"), get available origin/destination locations, and fetch deal frequency options',
+            name: 'qde-search-trade-reference-data',
+            description: '🔍 QDE SYSTEM: Search Alliance Energy trading reference data. Examples: "Find companies with Energy in name" → type="companies", "Get Houston terminals" → type="origin-locations", "List delivery frequencies" → type="frequencies"',
             inputSchema: {
               type: 'object',
               properties: {
@@ -81,8 +81,8 @@ class QdeMcpServer {
             }
           },
           {
-            name: 'get-market-pricing-data',
-            description: 'Retrieve current market pricing information: get price components for products, find price publishers (like OPIS), fetch historical OPIS prices, and get available price types for specific markets',
+            name: 'qde-get-market-pricing-data',
+            description: '📊 QDE SYSTEM: Get Alliance Energy market pricing data. Examples: "Get OPIS publishers" → type="price-publishers", "Get price for location 100" → type="opis-price" with locationId=100, "Get price component 5" → type="price-components" with id=5',
             inputSchema: {
               type: 'object',
               properties: {
@@ -136,8 +136,8 @@ class QdeMcpServer {
             }
           },
           {
-            name: 'calculate-trade-pricing',
-            description: 'Perform pricing calculations for trade deals: calculate location price differentials between origin/destination, compute base pricing defaults for products, and determine booking details from specific locations',
+            name: 'qde-calculate-trade-pricing',
+            description: '💰 QDE SYSTEM: Calculate Alliance Energy trade pricing. Examples: "Get booking for location 100" → type="book-from-location" with locationId=100, "Calculate location differential" → type="location-diff-price", "Get base pricing" → type="base-price-default"',
             inputSchema: {
               type: 'object',
               properties: {
@@ -184,8 +184,8 @@ class QdeMcpServer {
             }
           },
           {
-            name: 'manage-trade-deals',
-            description: 'Create new trade deals, update existing deals, retrieve deal information, or delete deals from the trading system',
+            name: 'qde-manage-trade-deals',
+            description: '📝 QDE SYSTEM: Manage Alliance Energy trade deals. Examples: "Create deal with ABC Trading" → action="create" with dealData, "Get deal QDE-12345" → action="get" with dealId="QDE-12345", "Delete old deal" → action="delete"',
             inputSchema: {
               type: 'object',
               properties: {
@@ -237,22 +237,22 @@ class QdeMcpServer {
 
       try {
         switch (name) {
-          case 'search-trade-reference-data':
+          case 'qde-search-trade-reference-data':
             return await this.referenceDataTool.execute(args);
             
-          case 'get-market-pricing-data':
+          case 'qde-get-market-pricing-data':
             return await this.pricingTool.execute(args);
             
-          case 'calculate-trade-pricing':
+          case 'qde-calculate-trade-pricing':
             return await this.calculationsTool.execute(args);
             
-          case 'manage-trade-deals':
+          case 'qde-manage-trade-deals':
             return await this.dealManagementTool.execute(args);
             
           default:
             throw new McpError(
               ErrorCode.MethodNotFound,
-              `Unknown tool: ${name}. Available tools: search-trade-reference-data, get-market-pricing-data, calculate-trade-pricing, manage-trade-deals`
+              `Unknown tool: ${name}. Available QDE tools: qde-search-trade-reference-data, qde-get-market-pricing-data, qde-calculate-trade-pricing, qde-manage-trade-deals`
             );
         }
       } catch (error) {
