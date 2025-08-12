@@ -2,28 +2,45 @@
 
 ## Project Overview
 
-The **QDE (Quick Data Entry) Agent System** is an AI-powered multi-agent system designed to automate energy trade deal creation through natural language processing. Built on the [PocketFlow](https://github.com/The-Pocket/PocketFlow-Typescript) framework with [Model Context Protocol (MCP)](https://github.com/anthropics/mcp) integration.
+The **QDE (Quick Data Entry) Agent System** is an AI-powered multi-agent system that transforms natural language descriptions into complete energy trade deals. The system automates the complex process of deal creation by intelligently gathering market data, calculating pricing, validating business rules, and submitting deals to the Alliance Energy trading platform.
+
+### Primary Goal
+**Transform this:** "Create a deal with ABC Trading for 5000 gallons from Houston to Dallas, monthly delivery"
+**Into this:** Complete validated trade deal submitted to Alliance Energy API with:
+- ✅ Verified counterparty information
+- ✅ Current market pricing (OPIS data)
+- ✅ Location differentials calculated  
+- ✅ Business rules validated
+- ✅ Deal confirmed in trading system
+
+Built on the [PocketFlow](https://github.com/The-Pocket/PocketFlow-Typescript) framework with [Model Context Protocol (MCP)](https://github.com/anthropics/mcp) integration for seamless API bridging.
 
 ## Architecture Overview
 
 ```
-┌─────────────────┐    ┌──────────────────────┐    ┌─────────────────┐
-│     User        │───▶│   Main Orchestrator   │───▶│   QDE API       │
-│  (Natural Lang) │    │     Agent            │    │ (localhost:8000)│
-└─────────────────┘    └──────────────────────┘    └─────────────────┘
-                                │                           ▲
-                    ┌───────────┼───────────┐              │
-                    ▼           ▼           ▼              │
-          ┌─────────────┐ ┌───────────┐ ┌─────────────┐   │
-          │Data Collection│ │  Pricing  │ │ Validation  │   │
-          │    Agent    │ │   Agent   │ │    Agent    │   │
-          └─────────────┘ └───────────┘ └─────────────┘   │
-                    │           │           │              │
-                    └───────────┼───────────┘              │
-                                ▼                          │
-                    ┌──────────────────────┐              │
-                    │     MCP Server       │──────────────┘
-                    │  (4 Logical Tools)   │
+┌─────────────────┐    ┌──────────────────────┐    ┌─────────────────────┐
+│     User        │───▶│   Main Orchestrator   │───▶│  Alliance Energy    │
+│  (Natural Lang) │    │     Agent            │    │      API            │
+└─────────────────┘    └──────────────────────┘    │ (localhost:5000)    │
+                                │                   └─────────────────────┘
+                    ┌───────────┼───────────┐                    ▲
+                    ▼           ▼           ▼                    │
+          ┌─────────────┐ ┌───────────┐ ┌─────────────┐         │
+          │Data Collection│ │  Pricing  │ │ Validation  │         │
+          │    Agent    │ │   Agent   │ │    Agent    │         │
+          └─────────────┘ └───────────┘ └─────────────┘         │
+                    │           │           │                    │
+                    └───────────┼───────────┘                    │
+                                ▼                                │
+                    ┌──────────────────────┐                    │
+                    │     MCP Server       │────────────────────┘
+                    │   (4 Unified Tools)  │
+                    │ ┌──────────────────┐ │
+                    │ │search-trade-ref  │ │  
+                    │ │get-market-pricing│ │
+                    │ │calculate-pricing │ │
+                    │ │manage-deals      │ │
+                    │ └──────────────────┘ │
                     └──────────────────────┘
 ```
 
@@ -100,96 +117,154 @@ qde-agent/
 └── examples/                 # Usage examples and demos
 ```
 
-## QDE API Integration
+## Alliance Energy API Integration
 
-### API Endpoints (localhost:8000)
-The system integrates with 11 mock QDE API endpoints:
+### Target Platform
+The QDE Agent System integrates with the **Alliance Energy** trading platform - a comprehensive .NET Core API that manages energy commodity trading operations. The system connects to Alliance Energy's QDE (Quick Data Entry) endpoints for real-time market data and deal execution.
+
+### API Endpoints (localhost:5000)
+The system integrates with 11 Alliance Energy QDE API endpoints:
 
 **Reference Data:**
-- `GET /api/fake/tradeentry/externalcompanies`
-- `GET /api/fake/tradeentry/customoriginlocations`
-- `GET /api/fake/tradeentry/customdestinationlocations`
-- `GET /api/fake/tradeentry/customfrequencyvalues`
+- `GET /api/fake/tradeentry/externalcompanies` - Trading counterparties and companies
+- `GET /api/fake/tradeentry/customoriginlocations` - Pickup/supply locations  
+- `GET /api/fake/tradeentry/customdestinationlocations` - Delivery/destination points
+- `GET /api/fake/tradeentry/customfrequencyvalues` - Delivery frequencies (daily, weekly, monthly)
 
-**Pricing Data:**
-- `GET /api/fake/tradeentry/pricecomponents/{id}`
-- `GET /api/fake/tradeentry/pricepublishers`
-- `GET /api/fake/tradeentry/previousaverageopisprice`
-- `GET /api/fake/tradeentry/customindexpricetypes`
+**Market Pricing Data:**
+- `GET /api/fake/tradeentry/pricecomponents/{id}` - Product pricing components
+- `GET /api/fake/tradeentry/pricepublishers` - Market data publishers (OPIS, Platts, Argus)
+- `GET /api/fake/tradeentry/previousaverageopisprice` - Historical OPIS market prices
+- `GET /api/fake/tradeentry/customindexpricetypes` - Available pricing index types
 
-**Calculations:**
-- `GET /api/fake/tradeentry/bookfromlocation/{id}`
-- `POST /api/fake/tradeentry/locationdiffpricedefault`
-- `POST /api/fake/tradeentry/basepricedefault`
+**Pricing Calculations:**
+- `GET /api/fake/tradeentry/bookfromlocation/{id}` - Location booking details
+- `POST /api/fake/tradeentry/locationdiffpricedefault` - Location price differentials
+- `POST /api/fake/tradeentry/basepricedefault` - Base pricing calculations
 
 ### API Configuration
 ```env
-QDE_API_BASE_URL=http://localhost:8000
-QDE_API_KEY=your-api-key-here
+# Alliance Energy API Configuration
+QDE_API_BASE_URL=http://localhost:5000
+QDE_API_KEY=your-alliance-energy-api-key
 MCP_SERVER_PORT=3001
+
+# Development Setup
+ALLIANCE_ENERGY_PATH=/Users/nickbrooks/work/alliance-energy
 ```
+
+### Running Alliance Energy API
+```bash
+cd /Users/nickbrooks/work/alliance-energy
+./run-webapi-standalone.sh
+```
+This starts the .NET Core API with Swagger documentation at `http://localhost:5000/swagger`
 
 ## MCP Server Architecture
 
-### 4 Logical Tool Groups
+The MCP server acts as a bridge between the QDE agents and Alliance Energy API, providing 4 unified tools optimized for Claude Code integration.
 
-#### 1. `qde-reference-data`
-**Purpose**: Fetch reference data for trade deals
+### 🚨 **Claude Code Usage Instructions**
+
+**IMPORTANT**: When using QDE MCP tools, Claude Code should:
+- ✅ **Use tools directly** and return the data found
+- ✅ **Report results immediately** without creating files
+- ❌ **Do NOT create new files** unless explicitly requested
+- ❌ **Do NOT save data to files** automatically
+- 📋 **Simply display the information** retrieved from Alliance Energy API
+
+**Example Behavior**:
+```
+User: "Find companies with Energy in the name"
+Claude: [Uses search-trade-reference-data tool]
+Claude: "Found 3 companies: Alliance Energy Partners (ID: 1005), Energy Solutions LLC (ID: 1004), Global Energy Corp (ID: 1003)"
+```
+
+**NOT This**:
+```
+Claude: "I'll save this company data to a file for you..."
+```
+
+### 4 Unified Tool Groups (✅ Enhanced for Claude Code)
+
+#### 1. `search-trade-reference-data`
+**Purpose**: Search and retrieve trading reference data - find companies by name, get trading locations, and fetch deal frequency options
 ```typescript
-// Usage
+// Enhanced with better descriptions and validation
 {
-  "name": "qde-reference-data",
+  "name": "search-trade-reference-data",
   "arguments": {
     "type": "companies" | "origin-locations" | "destination-locations" | "frequencies",
-    "showFiltered": false,
-    "getByPrimaryMarketer": false
+    "showFiltered": false,        // For locations: include inactive locations
+    "getByPrimaryMarketer": false // For companies: filter by primary marketer
   }
 }
 ```
 
-#### 2. `qde-pricing`
-**Purpose**: Get market pricing and OPIS data
+#### 2. `get-market-pricing-data`
+**Purpose**: Retrieve current market pricing information - get price components, find price publishers (OPIS, Platts), fetch historical prices, and get pricing methods
 ```typescript
-// Usage
+// Enhanced with conditional validation and pattern matching
 {
-  "name": "qde-pricing", 
+  "name": "get-market-pricing-data",
   "arguments": {
     "type": "price-components" | "price-publishers" | "opis-price" | "price-types",
-    "locationId": 100,
-    "productId": 5,
-    "fromDateString": "2024-01-15"
+    "id": 100,                    // Required for price-components
+    "locationId": 100,            // Required for opis-price
+    "productId": 5,               // Required for opis-price  
+    "fromDateString": "2024-01-15", // Required for opis-price (YYYY-MM-DD)
+    "pricePublisherId": 1         // Required for price-types
   }
 }
 ```
 
-#### 3. `qde-calculations`
-**Purpose**: Perform pricing calculations
+#### 3. `calculate-trade-pricing`
+**Purpose**: Perform pricing calculations for trade deals - calculate location differentials, compute base pricing, and determine booking details
 ```typescript
-// Usage
+// Enhanced with detailed parameter descriptions and constraints
 {
-  "name": "qde-calculations",
+  "name": "calculate-trade-pricing",
   "arguments": {
     "type": "location-diff-price" | "base-price-default" | "book-from-location",
-    "locationId": 100,
-    "productId": 1,
-    "quantities": [1000, 2000, 3000]
+    "locationId": 100,            // Required for all calculations
+    "productId": 1,               // Required for pricing calculations
+    "quantities": [1000, 2000],   // Required for location-diff-price (min 1 item)
+    "priceDictionary": {},        // Required for base-price-default
+    "frequencyType": "monthly"    // Required for base-price-default
   }
 }
 ```
 
-#### 4. `qde-deal-management`
-**Purpose**: Create and manage deals
+#### 4. `manage-trade-deals`
+**Purpose**: Create new trade deals, update existing deals, retrieve deal information, or delete deals from the trading system
 ```typescript
-// Usage
+// Enhanced with deal structure validation and ID pattern matching
 {
-  "name": "qde-deal-management",
+  "name": "manage-trade-deals",
   "arguments": {
     "action": "create" | "update" | "get" | "delete",
-    "dealData": { /* deal payload */ },
-    "dealId": "DEAL-123"
+    "dealData": {               // Required for create/update
+      "counterparty": "ABC Trading Company",
+      "product": "Gasoline Regular Unleaded", 
+      "quantity": 5000,
+      "originLocation": "Houston Terminal",
+      "destinationLocation": "Dallas Hub",
+      "frequency": "monthly",
+      "pricing": { /* pricing structure */ }
+    },
+    "dealId": "QDE-XXXXX-YYYY-ZZZZ"  // Required for update/get/delete
   }
 }
 ```
+
+### MCP Enhancement Features ✅
+
+**Improved Claude Code Integration:**
+- ✅ **Action-oriented descriptions**: Tools explain what they do in context
+- ✅ **Conditional validation**: Schema validates required parameters by operation type  
+- ✅ **Better error messages**: Include context and available tools list
+- ✅ **Enhanced responses**: Structured formatting with item counts
+- ✅ **Input validation**: Pattern matching, constraints, and type safety
 
 ## Specialized Subagents
 
@@ -359,13 +434,18 @@ npm run build
 ## Environment Setup
 
 ### Prerequisites
-1. **QDE API** running at `http://localhost:8000`
+1. **Alliance Energy API** running at `http://localhost:5000`
 2. **Node.js** 18+ with npm
 3. **TypeScript** for development
 
 ### Quick Start
 ```bash
-cd qde-agent
+# Start Alliance Energy API
+cd /Users/nickbrooks/work/alliance-energy
+./run-webapi-standalone.sh &
+
+# Setup QDE Agent
+cd /Users/nickbrooks/work/qde-agent
 cp .env.example .env
 npm install
 npm test    # Verify setup
@@ -374,20 +454,26 @@ npm run dev # Run basic demo
 
 ## Integration Points
 
-### With Existing QDE API
+### With Alliance Energy Trading Platform
+- **Target System**: .NET Core API managing energy commodity trading
 - **Authentication**: Bearer token support via `QDE_API_KEY`
-- **Endpoints**: All 11 mock endpoints mapped to MCP tools
-- **Error Handling**: Robust API error handling and retries
+- **Endpoints**: All 11 QDE trade entry endpoints mapped to MCP tools
+- **Real-time Data**: Live market pricing, company data, and location information
+- **Error Handling**: Robust API error handling with context and retries
 
-### With Claude/LLM Systems
-- **MCP Protocol**: Standard tool calling interface
-- **Tool Descriptions**: Rich schemas for LLM understanding
-- **Response Formatting**: Structured JSON responses
+### With Claude Code & AI Systems
+- **MCP Protocol**: Enhanced tool calling interface optimized for Claude
+- **Tool Descriptions**: Action-oriented descriptions with examples
+- **Input Validation**: Conditional schema validation with clear error messages
+- **Response Formatting**: Structured responses with item counts and context
+- **Debugging**: Enhanced error messages with available tools and parameters
 
-### With PocketFlow Ecosystem
-- **Node Compatibility**: Follows PocketFlow node patterns
-- **Flow Orchestration**: Uses PocketFlow's action-based routing
-- **Type Safety**: Full TypeScript integration
+### With PocketFlow Agent Framework
+- **Node Compatibility**: Follows PocketFlow's prep→exec→post lifecycle patterns
+- **Flow Orchestration**: Uses action-based routing ('pricing', 'validation', 'complete')
+- **Shared State**: `DealState` object maintains context across all agents
+- **Error Recovery**: Built-in retry logic and graceful fallback methods
+- **Type Safety**: Full TypeScript integration with comprehensive interfaces
 
 ## Testing Strategy
 
@@ -406,6 +492,64 @@ npm run dev # Run basic demo
 
 ---
 
-**Status**: Foundation complete, ready for specialized agent implementation
-**Next Steps**: Implement Pricing, Validation, and Deal Creation agents
-**Architecture**: Scalable, testable, following PocketFlow best practices
+## Project Status & Goals Summary
+
+### 🎯 **Primary Mission**
+Transform natural language trade requests into validated deals in the Alliance Energy trading platform through intelligent AI agent orchestration.
+
+### ✅ **Current Status (Foundation Complete)**
+- ✅ **PocketFlow Integration**: Multi-agent system with prep→exec→post lifecycle
+- ✅ **Data Collection Agent**: Fully implemented with MCP integration
+- ✅ **MCP Server**: 4 enhanced tools optimized for Claude Code integration
+- ✅ **Alliance Energy Integration**: Connected to .NET Core trading API
+- ✅ **Type System**: Comprehensive TypeScript interfaces and validation
+- ✅ **Testing Framework**: Basic tests passing with workflow validation
+
+### 🚀 **Next Development Phase**
+1. **Pricing Agent**: Implement market data analysis and OPIS price integration
+2. **Validation Agent**: Add business rule validation and missing field detection  
+3. **Deal Creation Agent**: Complete deal assembly and submission to Alliance Energy
+4. **Enhanced Error Handling**: Production-ready retry logic and fallback strategies
+
+### 🏗️ **Architecture Strengths**
+- **Scalable**: PocketFlow's minimalist design supports complex workflows
+- **Testable**: Each agent and MCP tool can be independently tested
+- **AI-Optimized**: Enhanced MCP tools work seamlessly with Claude Code
+- **Production-Ready**: Robust error handling and Alliance Energy API integration
+
+### 💡 **Value Proposition**
+**Before**: Manual trade entry requiring expert knowledge of markets, pricing, and validation rules
+**After**: "Create a deal with ABC Trading for 5000 gallons from Houston to Dallas" → Complete validated trade deal in Alliance Energy system
+
+**Key Benefits**:
+- ⚡ **Speed**: Seconds instead of minutes for deal creation
+- 🎯 **Accuracy**: Automated validation reduces human error
+- 📊 **Intelligence**: Real-time market pricing and calculations
+- 🔄 **Scalability**: Handle multiple concurrent deal requests
+- 🛡️ **Reliability**: Robust error handling and fallback mechanisms
+
+---
+
+## 📋 **Important Instructions for Claude Code**
+
+When working with this QDE Agent System:
+
+### **MCP Tool Usage Guidelines**
+- ✅ **Use QDE MCP tools directly** to retrieve Alliance Energy data
+- ✅ **Report findings immediately** without creating unnecessary files
+- ✅ **Display results in a clear, readable format**
+- ❌ **Do NOT automatically create files** when using MCP tools
+- ❌ **Do NOT save data to disk** unless explicitly requested by user
+- 📊 **Focus on data retrieval and analysis**, not file management
+
+### **When to Create Files**
+- ✅ **Only when user explicitly asks** to save data
+- ✅ **When user requests documentation or reports**
+- ✅ **When implementing new code features**
+- ❌ **Never automatically** when just retrieving data
+
+### **Example Responses**
+**Good**: "Using QDE tools, I found 5 companies with 'Energy' in the name: [list results]"
+**Bad**: "I'll save this company data to a file for you..." (without being asked)
+
+**Remember**: The QDE MCP tools are for **data retrieval and analysis**, not automatic file creation.

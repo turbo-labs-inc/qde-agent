@@ -1,5 +1,6 @@
 import { Node } from '../../src/pocket-flow';
 import { DealState, Company, Location, Frequency } from '../../src/types';
+import { spawn } from 'child_process';
 
 export class DataCollectionAgent extends Node<DealState> {
   constructor(maxRetries = 3, wait = 1) {
@@ -55,16 +56,17 @@ export class DataCollectionAgent extends Node<DealState> {
       
       switch (dataType) {
         case 'companies':
-          results.companies = await this.mockFetchCompanies();
+          // Try MCP first, fallback to mock
+          results.companies = await this.mcpFetchCompanies(prepRes.requirements);
           break;
         case 'origin-locations':
-          results.originLocations = await this.mockFetchOriginLocations();
+          results.originLocations = await this.mcpFetchOriginLocations();
           break;
         case 'destination-locations':
-          results.destinationLocations = await this.mockFetchDestinationLocations();
+          results.destinationLocations = await this.mcpFetchDestinationLocations();
           break;
         case 'frequencies':
-          results.frequencies = await this.mockFetchFrequencies();
+          results.frequencies = await this.mcpFetchFrequencies();
           break;
       }
     }
@@ -108,7 +110,231 @@ export class DataCollectionAgent extends Node<DealState> {
     return 'collection';  // Still missing some data, continue collection
   }
 
-  // Mock data fetching methods (in real implementation, these would use MCP tools)
+  // MCP-powered data fetching
+  private async mcpFetchCompanies(requirements: string): Promise<Company[]> {
+    // Extract company name from requirements if mentioned
+    const companyNameMatch = requirements.match(/with\s+([^,]+?)(?:\s+for|\s+to|\s*,|$)/i);
+    const companyName = companyNameMatch ? companyNameMatch[1].trim() : '';
+    
+    if (companyName) {
+      try {
+        console.log(`  🔗 Using MCP to find company: ${companyName}`);
+        const mcpResponse = await this.callMCPTool('search-trade-reference-data', {
+          type: 'companies',
+          getByPrimaryMarketer: false
+        });
+        
+        // Parse the MCP response to get actual company data
+        if (mcpResponse.includes('Customer found:')) {
+          // Extract company name and ID from response
+          const match = mcpResponse.match(/Customer found: (.+?) \(ID: (.+?)\)/);
+          if (match) {
+            console.log(`  🎯 Using MCP data: ${match[1]} (ID: ${match[2]})`);
+            return [{ value: match[2], text: match[1] }];
+          }
+        } else if (mcpResponse.includes('Multiple customers found')) {
+          // Parse multiple customers
+          const companies: Company[] = [];
+          const matches = mcpResponse.match(/- (.+?) \(ID: (.+?)\)/g);
+          if (matches) {
+            for (const match of matches) {
+              const parts = match.match(/- (.+?) \(ID: (.+?)\)/);
+              if (parts) {
+                companies.push({ value: parts[2], text: parts[1] });
+              }
+            }
+          }
+          return companies;
+        }
+        
+        console.log('🔄 MCP found no specific match, fetching all companies...');
+      } catch (error) {
+        console.error('⚠️  MCP call failed, using fallback:', error);
+      }
+    }
+    
+    // Fallback to mock data
+    console.log('  📦 Using mock data for companies');
+    return this.mockFetchCompanies();
+  }
+
+  // MCP-powered location fetching
+  private async mcpFetchOriginLocations(): Promise<Location[]> {
+    try {
+      console.log(`  🔗 Using MCP to fetch origin locations`);
+      const mcpResponse = await this.callMCPTool('search-trade-reference-data', {
+        type: 'origin-locations',
+        showFiltered: false
+      });
+      
+      // Parse locations from response
+      const locations = this.parseLocationsFromResponse(mcpResponse);
+      if (locations.length > 0) {
+        console.log(`  ✅ Retrieved ${locations.length} origin locations via MCP`);
+        return locations;
+      }
+    } catch (error) {
+      console.error('⚠️  MCP call failed for origins, using fallback:', error);
+    }
+    
+    console.log('  📦 Using mock data for origin locations');
+    return this.mockFetchOriginLocations();
+  }
+
+  private async mcpFetchDestinationLocations(): Promise<Location[]> {
+    try {
+      console.log(`  🔗 Using MCP to fetch destination locations`);
+      const mcpResponse = await this.callMCPTool('search-trade-reference-data', {
+        type: 'destination-locations',
+        showFiltered: false
+      });
+      
+      // Parse locations from response
+      const locations = this.parseLocationsFromResponse(mcpResponse);
+      if (locations.length > 0) {
+        console.log(`  ✅ Retrieved ${locations.length} destination locations via MCP`);
+        return locations;
+      }
+    } catch (error) {
+      console.error('⚠️  MCP call failed for destinations, using fallback:', error);
+    }
+    
+    console.log('  📦 Using mock data for destination locations');
+    return this.mockFetchDestinationLocations();
+  }
+
+  private async mcpFetchFrequencies(): Promise<Frequency[]> {
+    try {
+      console.log(`  🔗 Using MCP to fetch frequencies`);
+      const mcpResponse = await this.callMCPTool('search-trade-reference-data', {
+        type: 'frequencies'
+      });
+      
+      // Parse frequencies from response
+      const frequencies = this.parseFrequenciesFromResponse(mcpResponse);
+      if (frequencies.length > 0) {
+        console.log(`  ✅ Retrieved ${frequencies.length} frequencies via MCP`);
+        return frequencies;
+      }
+    } catch (error) {
+      console.error('⚠️  MCP call failed for frequencies, using fallback:', error);
+    }
+    
+    console.log('  📦 Using mock data for frequencies');
+    return this.mockFetchFrequencies();
+  }
+
+  // Helper method to parse locations from MCP response
+  private parseLocationsFromResponse(response: string): Location[] {
+    const locations: Location[] = [];
+    
+    if (response.includes('Location found:')) {
+      // Single location
+      const match = response.match(/Location found: (.+?) \(ID: (.+?)\)/);
+      if (match) {
+        locations.push({ value: match[2], text: match[1] });
+      }
+    } else if (response.includes('Found') && response.includes('locations:')) {
+      // Multiple locations
+      const matches = response.match(/- (.+?) \(ID: (.+?)\)/g);
+      if (matches) {
+        for (const match of matches) {
+          const parts = match.match(/- (.+?) \(ID: (.+?)\)/);
+          if (parts) {
+            locations.push({ value: parts[2], text: parts[1] });
+          }
+        }
+      }
+    }
+    
+    return locations;
+  }
+
+  // Helper method to parse frequencies from MCP response
+  private parseFrequenciesFromResponse(response: string): Frequency[] {
+    const frequencies: Frequency[] = [];
+    
+    if (response.includes('Frequency found:')) {
+      // Single frequency
+      const match = response.match(/Frequency found: (.+?) \(ID: (.+?)\)/);
+      if (match) {
+        frequencies.push({ value: match[2], text: match[1] });
+      }
+    } else if (response.includes('Available frequencies:')) {
+      // Multiple frequencies
+      const matches = response.match(/- (.+?) \(ID: (.+?)\)/g);
+      if (matches) {
+        for (const match of matches) {
+          const parts = match.match(/- (.+?) \(ID: (.+?)\)/);
+          if (parts) {
+            frequencies.push({ value: parts[2], text: parts[1] });
+          }
+        }
+      }
+    }
+    
+    return frequencies;
+  }
+
+  // Helper method to call MCP tools
+  private async callMCPTool(toolName: string, args: any): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const mcpPath = '/Users/nickbrooks/work/qde-agent/mcp/server/index.ts';
+      const child = spawn('npx', ['tsx', mcpPath]);
+      
+      let output = '';
+      let error = '';
+
+      child.stdout.on('data', (data) => {
+        output += data.toString();
+      });
+
+      child.stderr.on('data', (data) => {
+        error += data.toString();
+      });
+
+      child.on('close', (code) => {
+        if (code === 0) {
+          try {
+            // Parse JSON-RPC response
+            const lines = output.split('\n').filter(line => line.trim());
+            for (const line of lines) {
+              try {
+                const response = JSON.parse(line);
+                if (response.result && response.result.content) {
+                  resolve(response.result.content[0].text);
+                  return;
+                }
+              } catch (parseError) {
+                // Continue to next line
+              }
+            }
+            reject(new Error('No valid JSON-RPC response found'));
+          } catch (parseError) {
+            reject(new Error(`Failed to parse MCP response: ${parseError}`));
+          }
+        } else {
+          reject(new Error(`MCP call failed with code ${code}: ${error}`));
+        }
+      });
+
+      // Send the tool call request
+      const request = {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: toolName,
+          arguments: args
+        }
+      };
+      
+      child.stdin.write(JSON.stringify(request) + '\n');
+      child.stdin.end();
+    });
+  }
+
+  // Mock data fetching methods (fallback when MCP fails)
   private async mockFetchCompanies(): Promise<Company[]> {
     return [
       { value: "1001", text: "ABC Trading Company" },

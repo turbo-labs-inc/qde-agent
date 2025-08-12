@@ -55,126 +55,176 @@ class QdeMcpServer {
       return {
         tools: [
           {
-            name: 'qde-reference-data',
-            description: 'Get reference data including companies, locations, and frequencies for trade deals',
+            name: 'search-trade-reference-data',
+            description: 'Search and retrieve trading reference data: find companies by name (like "ABC Trading"), get available origin/destination locations, and fetch deal frequency options',
             inputSchema: {
               type: 'object',
               properties: {
                 type: {
                   type: 'string',
                   enum: ['companies', 'origin-locations', 'destination-locations', 'frequencies'],
-                  description: 'Type of reference data to retrieve'
+                  description: 'Type of reference data: companies (search trading partners), origin-locations (pickup points), destination-locations (delivery points), frequencies (monthly, weekly, etc.)'
                 },
                 showFiltered: {
                   type: 'boolean',
-                  description: 'Whether to show filtered results (for locations)',
+                  description: 'For locations only: include filtered/inactive locations in results',
                   default: false
                 },
                 getByPrimaryMarketer: {
                   type: 'boolean', 
-                  description: 'Filter companies by primary marketer (for companies)',
+                  description: 'For companies only: filter to show only primary marketer companies',
                   default: false
                 }
               },
-              required: ['type']
+              required: ['type'],
+              additionalProperties: false
             }
           },
           {
-            name: 'qde-pricing',
-            description: 'Get pricing information including price components, publishers, and OPIS data',
+            name: 'get-market-pricing-data',
+            description: 'Retrieve current market pricing information: get price components for products, find price publishers (like OPIS), fetch historical OPIS prices, and get available price types for specific markets',
             inputSchema: {
               type: 'object',
               properties: {
                 type: {
                   type: 'string',
                   enum: ['price-components', 'price-publishers', 'opis-price', 'price-types'],
-                  description: 'Type of pricing data to retrieve'
+                  description: 'Type of pricing data: price-components (product pricing details), price-publishers (OPIS, Platts, etc.), opis-price (historical market prices), price-types (available pricing methods)'
                 },
                 id: {
                   type: 'number',
-                  description: 'ID for price components or location/product for OPIS'
+                  description: 'Required for price-components: the price component ID to retrieve'
                 },
                 priceType: {
                   type: 'number',
-                  description: 'Price type ID for publishers'
+                  description: 'Optional for price-publishers: filter by specific price type ID'
                 },
                 locationId: {
                   type: 'number',
-                  description: 'Location ID for OPIS price lookup'
+                  description: 'Required for opis-price: location ID where price applies'
                 },
                 productId: {
                   type: 'number',
-                  description: 'Product ID for OPIS price lookup'
+                  description: 'Required for opis-price: product ID for price lookup'
                 },
                 fromDateString: {
                   type: 'string',
-                  description: 'Date string for OPIS price lookup (YYYY-MM-DD)'
+                  pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+                  description: 'Required for opis-price: start date for price history (YYYY-MM-DD format)'
                 },
                 pricePublisherId: {
                   type: 'number',
-                  description: 'Price publisher ID for price types'
+                  description: 'Required for price-types: publisher ID to get available price types'
                 }
               },
-              required: ['type']
+              required: ['type'],
+              additionalProperties: false,
+              allOf: [
+                {
+                  if: { properties: { type: { const: 'price-components' } } },
+                  then: { required: ['type', 'id'] }
+                },
+                {
+                  if: { properties: { type: { const: 'opis-price' } } },
+                  then: { required: ['type', 'locationId', 'productId', 'fromDateString'] }
+                },
+                {
+                  if: { properties: { type: { const: 'price-types' } } },
+                  then: { required: ['type', 'pricePublisherId'] }
+                }
+              ]
             }
           },
           {
-            name: 'qde-calculations',
-            description: 'Perform pricing calculations including location differentials and base prices',
+            name: 'calculate-trade-pricing',
+            description: 'Perform pricing calculations for trade deals: calculate location price differentials between origin/destination, compute base pricing defaults for products, and determine booking details from specific locations',
             inputSchema: {
               type: 'object',
               properties: {
                 type: {
                   type: 'string',
                   enum: ['location-diff-price', 'base-price-default', 'book-from-location'],
-                  description: 'Type of calculation to perform'
+                  description: 'Calculation type: location-diff-price (price difference between locations), base-price-default (standard base pricing), book-from-location (booking details for location)'
                 },
                 locationId: {
                   type: 'number',
-                  description: 'Location ID for calculations'
+                  description: 'Required for all types: location ID for price calculations'
                 },
                 productId: {
                   type: 'number',
-                  description: 'Product ID for calculations'
+                  description: 'Required for location-diff-price and base-price-default: product ID'
                 },
                 quantities: {
                   type: 'array',
-                  items: { type: 'number' },
-                  description: 'Array of quantities for calculations'
+                  items: { type: 'number', minimum: 0 },
+                  description: 'Required for location-diff-price: array of quantity values to calculate prices for',
+                  minItems: 1
                 },
                 priceDictionary: {
                   type: 'object',
-                  description: 'Price dictionary for base price calculations'
+                  description: 'Required for base-price-default: pricing data dictionary with market values'
                 },
                 frequencyType: {
                   type: 'string',
-                  description: 'Frequency type for base price calculations'
+                  description: 'Required for base-price-default: delivery frequency (monthly, weekly, daily, etc.)'
                 }
               },
-              required: ['type']
+              required: ['type', 'locationId'],
+              additionalProperties: false,
+              allOf: [
+                {
+                  if: { properties: { type: { const: 'location-diff-price' } } },
+                  then: { required: ['type', 'locationId', 'productId', 'quantities'] }
+                },
+                {
+                  if: { properties: { type: { const: 'base-price-default' } } },
+                  then: { required: ['type', 'locationId', 'productId', 'priceDictionary', 'frequencyType'] }
+                }
+              ]
             }
           },
           {
-            name: 'qde-deal-management',
-            description: 'Create, update, and manage trade deals',
+            name: 'manage-trade-deals',
+            description: 'Create new trade deals, update existing deals, retrieve deal information, or delete deals from the trading system',
             inputSchema: {
               type: 'object',
               properties: {
                 action: {
                   type: 'string',
                   enum: ['create', 'update', 'get', 'delete'],
-                  description: 'Action to perform on the deal'
+                  description: 'Action to perform: create (new deal), update (modify existing), get (retrieve deal info), delete (remove deal)'
                 },
                 dealData: {
                   type: 'object',
-                  description: 'Deal data payload for create/update operations'
+                  description: 'Required for create/update: complete deal information including counterparty, product, quantities, locations, and pricing',
+                  properties: {
+                    counterparty: { type: 'string' },
+                    product: { type: 'string' },
+                    quantity: { type: 'number', minimum: 0 },
+                    originLocation: { type: 'string' },
+                    destinationLocation: { type: 'string' },
+                    frequency: { type: 'string' },
+                    pricing: { type: 'object' }
+                  }
                 },
                 dealId: {
                   type: 'string',
-                  description: 'Deal ID for update/get/delete operations'
+                  pattern: '^[A-Z0-9-]+$',
+                  description: 'Required for update/get/delete: existing deal ID (format: QDE-XXXXX-YYYY-ZZZZ)'
                 }
               },
-              required: ['action']
+              required: ['action'],
+              additionalProperties: false,
+              allOf: [
+                {
+                  if: { properties: { action: { enum: ['create', 'update'] } } },
+                  then: { required: ['action', 'dealData'] }
+                },
+                {
+                  if: { properties: { action: { enum: ['get', 'delete', 'update'] } } },
+                  then: { required: ['action', 'dealId'] }
+                }
+              ]
             }
           }
         ]
@@ -187,22 +237,22 @@ class QdeMcpServer {
 
       try {
         switch (name) {
-          case 'qde-reference-data':
+          case 'search-trade-reference-data':
             return await this.referenceDataTool.execute(args);
             
-          case 'qde-pricing':
+          case 'get-market-pricing-data':
             return await this.pricingTool.execute(args);
             
-          case 'qde-calculations':
+          case 'calculate-trade-pricing':
             return await this.calculationsTool.execute(args);
             
-          case 'qde-deal-management':
+          case 'manage-trade-deals':
             return await this.dealManagementTool.execute(args);
             
           default:
             throw new McpError(
               ErrorCode.MethodNotFound,
-              `Unknown tool: ${name}`
+              `Unknown tool: ${name}. Available tools: search-trade-reference-data, get-market-pricing-data, calculate-trade-pricing, manage-trade-deals`
             );
         }
       } catch (error) {

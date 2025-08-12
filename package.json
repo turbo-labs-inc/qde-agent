@@ -36,6 +36,7 @@
   ],
   "scripts": {
     "build": "tsup",
+    "build-mcp": "cd mcp/customer-server && npm run build",
     "test": "jest",
     "test:watch": "jest --watch",
     "dev": "tsx src/index.ts",

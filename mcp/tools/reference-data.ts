@@ -35,9 +35,17 @@ export class QdeReferenceDataTool extends BaseTool {
         count: Array.isArray(data) ? data.length : 1
       });
       
-    } catch (error) {
+    } catch (error: any) {
+      const context = {
+        requestedType: type,
+        showFiltered,
+        getByPrimaryMarketer,
+        ...(error.context || {})
+      };
+      
       return this.createErrorResponse(
-        `Failed to fetch ${type}: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to fetch ${type} data: ${error instanceof Error ? error.message : String(error)}`,
+        context
       );
     }
   }
