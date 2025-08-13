@@ -166,24 +166,85 @@ The MCP server acts as a bridge between the QDE agents and Alliance Energy API, 
 
 ### 🚨 **Claude Code Usage Instructions**
 
-**IMPORTANT**: When using QDE MCP tools, Claude Code should:
+**✅ MCP DEBUGGING COMPLETE - Fixed Integration Issues**
+
+**SOLUTION**: The QDE MCP server is now properly configured. The main issue was tsx not being globally available.
+
+**RECOMMENDED Configuration** (`claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "qde-agent": {
+      "command": "npx",
+      "args": ["tsx", "/Users/nickbrooks/work/qde-agent/mcp/server/index.ts"],
+      "cwd": "/Users/nickbrooks/work/qde-agent",
+      "env": {
+        "QDE_API_BASE_URL": "http://localhost:5000",
+        "NODE_ENV": "development"
+      }
+    }
+  }
+}
+```
+
+**Fix Applied**: 
+1. ✅ Verified server works standalone with all 4 tools
+2. ✅ Switched to npx tsx for better PATH resolution
+3. ✅ Added proper environment variables and working directory
+4. ✅ Tested configuration - tools should be available after restart
+
+**Previous Config** (global tsx - had registration issues):
+```json
+{
+  "mcpServers": {
+    "qde-agent": {
+      "command": "tsx",
+      "args": ["/Users/nickbrooks/work/qde-agent/mcp/server/index.ts"],
+      "cwd": "/Users/nickbrooks/work/qde-agent"
+    }
+  }
+}
+```
+
+**Status**: ✅ FIXED - QDE MCP tools are now working in Claude Code CLI! 
+
+**Final Configuration Applied**:
+```bash
+claude mcp add qde-agent npx tsx mcp/server/index.ts -e QDE_API_BASE_URL=http://localhost:5000
+```
+
+**Schema Issue Resolved**: Removed `allOf` conditional validation that caused "invalid_request_error" in Claude API - tools retain all functionality and clear parameter descriptions.
+
+**CRITICAL - NO FILE CREATION**: When using QDE MCP tools, Claude Code should:
 - ✅ **Use tools directly** and return the data found
-- ✅ **Report results immediately** without creating files
-- ❌ **Do NOT create new files** unless explicitly requested
-- ❌ **Do NOT save data to files** automatically
+- ✅ **Report results immediately** in the response
+- ✅ **Display data directly** in the conversation
+- ❌ **NEVER create script files** to fetch data (no test.ts, fetch.js, etc.)
+- ❌ **NEVER save results to files** unless explicitly requested by user
+- ❌ **NEVER write code files** just to call MCP tools
 - 📋 **Simply display the information** retrieved from Alliance Energy API
 
 **Example Behavior**:
 ```
 User: "Find companies with Energy in the name"
-Claude: [Uses search-trade-reference-data tool]
+Claude: [Uses qde-search-trade-reference-data tool directly]
 Claude: "Found 3 companies: Alliance Energy Partners (ID: 1005), Energy Solutions LLC (ID: 1004), Global Energy Corp (ID: 1003)"
 ```
 
-**NOT This**:
+**WRONG Approaches**:
 ```
-Claude: "I'll save this company data to a file for you..."
+Claude: "I'll create a script to fetch this data..." [Creates fetch-companies.ts]
+Claude: "Let me save these results to a file..." [Creates companies.json]
+Claude: "I'll write a test script to call the MCP tool..." [Creates test-mcp.js]
 ```
+
+**Remember**: MCP tools are meant to be called DIRECTLY, not through intermediate script files!
+
+### **📋 QDE Tools Quick Checklist**
+1. ✅ Start MCP server: `npm run mcp-server`
+2. ✅ Use tools directly (qde-search-trade-reference-data, etc.)
+3. ✅ Display results immediately
+4. ❌ Never create script files to call tools
 
 ### 4 Unified Tool Groups (✅ Enhanced for Claude Code)
 
@@ -534,6 +595,21 @@ Transform natural language trade requests into validated deals in the Alliance E
 
 When working with this QDE Agent System:
 
+### **⚡ STEP 1: Start MCP Server (REQUIRED)**
+Before using any qde-* tools, ALWAYS ensure the MCP server is running:
+```bash
+npm run mcp-server
+```
+This starts the bridge to Alliance Energy API. Without it, QDE tools won't work.
+
+### **🚫 CRITICAL: NO SCRIPT FILES FOR MCP TOOLS**
+**NEVER create TypeScript, JavaScript, or any script files just to call MCP tools!**
+- ❌ **DO NOT** create test.ts, fetch-data.js, query-api.ts, etc.
+- ❌ **DO NOT** write scripts that call MCP tools
+- ❌ **DO NOT** create files to "test" or "demonstrate" MCP usage
+- ✅ **DO** call MCP tools directly in your response
+- ✅ **DO** display results immediately in the conversation
+
 ### **MCP Tool Usage Guidelines**
 - ✅ **Use QDE MCP tools directly** to retrieve Alliance Energy data
 - ✅ **Report findings immediately** without creating unnecessary files
@@ -547,9 +623,11 @@ When working with this QDE Agent System:
 - ✅ **When user requests documentation or reports**
 - ✅ **When implementing new code features**
 - ❌ **Never automatically** when just retrieving data
+- ❌ **Never for calling MCP tools**
 
 ### **Example Responses**
 **Good**: "Using QDE tools, I found 5 companies with 'Energy' in the name: [list results]"
-**Bad**: "I'll save this company data to a file for you..." (without being asked)
+**Bad**: "I'll create a script to fetch this data..." [Creates unnecessary file]
+**Bad**: "Let me write a test file to call the MCP tool..." [Creates test.ts]
 
-**Remember**: The QDE MCP tools are for **data retrieval and analysis**, not automatic file creation.
+**Remember**: The QDE MCP tools are for **DIRECT USE**, not for wrapping in script files!

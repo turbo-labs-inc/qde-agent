@@ -56,7 +56,7 @@ class QdeMcpServer {
         tools: [
           {
             name: 'qde-search-trade-reference-data',
-            description: '🔍 QDE SYSTEM: Search Alliance Energy trading reference data. Examples: "Find companies with Energy in name" → type="companies", "Get Houston terminals" → type="origin-locations", "List delivery frequencies" → type="frequencies"',
+            description: '🔍 QDE SYSTEM: Search Alliance Energy trading reference data. IMPORTANT: Return results directly, DO NOT create files. Examples: "Find companies with Energy in name" → type="companies", "Get Houston terminals" → type="origin-locations", "List delivery frequencies" → type="frequencies"',
             inputSchema: {
               type: 'object',
               properties: {
@@ -82,7 +82,7 @@ class QdeMcpServer {
           },
           {
             name: 'qde-get-market-pricing-data',
-            description: '📊 QDE SYSTEM: Get Alliance Energy market pricing data. Examples: "Get OPIS publishers" → type="price-publishers", "Get price for location 100" → type="opis-price" with locationId=100, "Get price component 5" → type="price-components" with id=5',
+            description: '📊 QDE SYSTEM: Get Alliance Energy market pricing data. IMPORTANT: Return results directly, DO NOT create files. Examples: "Get OPIS publishers" → type="price-publishers", "Get price for location 100" → type="opis-price" with locationId=100, "Get price component 5" → type="price-components" with id=5',
             inputSchema: {
               type: 'object',
               properties: {
@@ -118,26 +118,12 @@ class QdeMcpServer {
                 }
               },
               required: ['type'],
-              additionalProperties: false,
-              allOf: [
-                {
-                  if: { properties: { type: { const: 'price-components' } } },
-                  then: { required: ['type', 'id'] }
-                },
-                {
-                  if: { properties: { type: { const: 'opis-price' } } },
-                  then: { required: ['type', 'locationId', 'productId', 'fromDateString'] }
-                },
-                {
-                  if: { properties: { type: { const: 'price-types' } } },
-                  then: { required: ['type', 'pricePublisherId'] }
-                }
-              ]
+              additionalProperties: false
             }
           },
           {
             name: 'qde-calculate-trade-pricing',
-            description: '💰 QDE SYSTEM: Calculate Alliance Energy trade pricing. Examples: "Get booking for location 100" → type="book-from-location" with locationId=100, "Calculate location differential" → type="location-diff-price", "Get base pricing" → type="base-price-default"',
+            description: '💰 QDE SYSTEM: Calculate Alliance Energy trade pricing. IMPORTANT: Return results directly, DO NOT create files. Examples: "Get booking for location 100" → type="book-from-location" with locationId=100, "Calculate location differential" → type="location-diff-price", "Get base pricing" → type="base-price-default"',
             inputSchema: {
               type: 'object',
               properties: {
@@ -170,22 +156,12 @@ class QdeMcpServer {
                 }
               },
               required: ['type', 'locationId'],
-              additionalProperties: false,
-              allOf: [
-                {
-                  if: { properties: { type: { const: 'location-diff-price' } } },
-                  then: { required: ['type', 'locationId', 'productId', 'quantities'] }
-                },
-                {
-                  if: { properties: { type: { const: 'base-price-default' } } },
-                  then: { required: ['type', 'locationId', 'productId', 'priceDictionary', 'frequencyType'] }
-                }
-              ]
+              additionalProperties: false
             }
           },
           {
             name: 'qde-manage-trade-deals',
-            description: '📝 QDE SYSTEM: Manage Alliance Energy trade deals. Examples: "Create deal with ABC Trading" → action="create" with dealData, "Get deal QDE-12345" → action="get" with dealId="QDE-12345", "Delete old deal" → action="delete"',
+            description: '📝 QDE SYSTEM: Manage Alliance Energy trade deals. IMPORTANT: Return results directly, DO NOT create files. Examples: "Create deal with ABC Trading" → action="create" with dealData, "Get deal QDE-12345" → action="get" with dealId="QDE-12345", "Delete old deal" → action="delete"',
             inputSchema: {
               type: 'object',
               properties: {
@@ -214,17 +190,7 @@ class QdeMcpServer {
                 }
               },
               required: ['action'],
-              additionalProperties: false,
-              allOf: [
-                {
-                  if: { properties: { action: { enum: ['create', 'update'] } } },
-                  then: { required: ['action', 'dealData'] }
-                },
-                {
-                  if: { properties: { action: { enum: ['get', 'delete', 'update'] } } },
-                  then: { required: ['action', 'dealId'] }
-                }
-              ]
+              additionalProperties: false
             }
           }
         ]

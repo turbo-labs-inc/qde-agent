@@ -1,0 +1,26 @@
+{
+  "dealId": "QDE-2025-0813-001",
+  "counterparty": "ABC Trading Company",
+  "counterpartyId": "1001",
+  "product": "Gasoline Regular Unleaded",
+  "productId": "GASOLINE-RUL",
+  "quantity": 5000,
+  "unit": "gallons",
+  "originLocation": "Houston Terminal",
+  "destinationLocation": "Dallas Hub", 
+  "frequency": "monthly",
+  "pricing": {
+    "basePrice": 2.45,
+    "differential": 0.05,
+    "totalPrice": 2.50,
+    "currency": "USD",
+    "priceUnit": "per gallon"
+  },
+  "deliveryPeriod": {
+    "startDate": "2025-09-01",
+    "endDate": "2025-09-30"
+  },
+  "status": "pending_confirmation",
+  "createdDate": "2025-08-13T14:53:47.333Z",
+  "tradingDesk": "Energy Trading"
+}
