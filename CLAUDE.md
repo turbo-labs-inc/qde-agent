@@ -625,9 +625,52 @@ This starts the bridge to Alliance Energy API. Without it, QDE tools won't work.
 - ❌ **Never automatically** when just retrieving data
 - ❌ **Never for calling MCP tools**
 
+### **🚀 QDE DEAL CREATION: DIRECT APPROACH**
+
+**CRITICAL**: When users request deal creation, use the `qde-manage-trade-deals` tool DIRECTLY without validation steps.
+
+**✅ CORRECT Approach for Deal Creation:**
+```
+User: "Create a deal with ABC Trading for 5000 gallons of Propane from Houston to Dallas"
+Assistant: qde-manage-trade-deals(action: "create", dealData: {...})
+Assistant: "Deal created successfully with ID 12345!"
+```
+
+**❌ WRONG Approach (Too Many Steps):**
+```
+User: "Create a deal with ABC Trading..."
+Assistant: "Let me verify ABC Trading exists..." [validation step 1]
+Assistant: "Let me find Houston location..." [validation step 2]  
+Assistant: "Let me check Dallas location..." [validation step 3]
+Assistant: "Let me verify Propane product..." [validation step 4]
+Assistant: "Now let me create the deal..." [finally creates]
+```
+
+### **QDE Deal Creation Rules:**
+
+1. **🎯 Skip Pre-Validation**: The `qde-manage-trade-deals` tool has robust error handling and smart defaults
+2. **🚀 Create Directly**: Jump straight to deal creation with the provided parameters
+3. **🛡️ Trust Error Handling**: If validation fails, the API will return clear error messages
+4. **📊 Smart Defaults**: The tool automatically maps names to IDs and handles missing data
+
+### **Smart Parsing Built-In:**
+- ✅ "ABC Trading Company" → automatically finds counterparty ID
+- ✅ "Houston Terminal" → maps to available Houston location
+- ✅ "Propane" → productId: 1  
+- ✅ "Monthly" → frequencyCvId: 3
+- ✅ Missing data → intelligent defaults applied
+
+### **When to Use Reference Data Tools:**
+- ✅ **User asks for search**: "Find all companies with Energy in name"
+- ✅ **User wants to browse**: "Show me available locations"  
+- ✅ **User needs options**: "What frequencies are available?"
+- ❌ **NOT for deal creation validation** - just create the deal directly
+
 ### **Example Responses**
 **Good**: "Using QDE tools, I found 5 companies with 'Energy' in the name: [list results]"
+**Good**: "I'll create that deal for you." → qde-manage-trade-deals → "Deal created with ID 12345!"
 **Bad**: "I'll create a script to fetch this data..." [Creates unnecessary file]
 **Bad**: "Let me write a test file to call the MCP tool..." [Creates test.ts]
+**Bad**: "Let me verify all the data first..." [5 validation steps before creating]
 
-**Remember**: The QDE MCP tools are for **DIRECT USE**, not for wrapping in script files!
+**Remember**: The QDE MCP tools are for **DIRECT USE** with **MINIMAL STEPS**!

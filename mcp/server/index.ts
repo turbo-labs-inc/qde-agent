@@ -161,32 +161,55 @@ class QdeMcpServer {
           },
           {
             name: 'qde-manage-trade-deals',
-            description: '📝 QDE SYSTEM: Manage Alliance Energy trade deals. IMPORTANT: Return results directly, DO NOT create files. Examples: "Create deal with ABC Trading" → action="create" with dealData, "Get deal QDE-12345" → action="get" with dealId="QDE-12345", "Delete old deal" → action="delete"',
+            description: '📝 QDE SYSTEM: Complete Alliance Energy trade deal management. IMPORTANT: Return results directly, DO NOT create files. Examples: "Create deal with ABC Trading" → action="create", "List active deals" → action="list", "Cancel deal 12345" → action="cancel", "Get deal history" → action="history"',
             inputSchema: {
               type: 'object',
               properties: {
                 action: {
                   type: 'string',
-                  enum: ['create', 'update', 'get', 'delete'],
-                  description: 'Action to perform: create (new deal), update (modify existing), get (retrieve deal info), delete (remove deal)'
+                  enum: ['create', 'update', 'get', 'list', 'update-status', 'cancel', 'delete', 'history', 'validate'],
+                  description: 'Action: create (new deal), update (modify existing), get (retrieve deal), list (search deals), update-status (change status), cancel (cancel deal), delete (remove deal), history (audit trail), validate (check deal)'
                 },
                 dealData: {
                   type: 'object',
-                  description: 'Required for create/update: complete deal information including counterparty, product, quantities, locations, and pricing',
+                  description: 'Required for create/update: complete deal information',
                   properties: {
-                    counterparty: { type: 'string' },
-                    product: { type: 'string' },
-                    quantity: { type: 'number', minimum: 0 },
-                    originLocation: { type: 'string' },
-                    destinationLocation: { type: 'string' },
-                    frequency: { type: 'string' },
-                    pricing: { type: 'object' }
+                    counterparty: { type: 'string', description: 'Trading partner name or ID' },
+                    product: { type: 'string', description: 'Product name (Propane, Butane, Gasoline, etc.)' },
+                    quantity: { type: 'number', minimum: 0, description: 'Volume amount' },
+                    originLocation: { type: 'string', description: 'Pickup location name or ID' },
+                    destinationLocation: { type: 'string', description: 'Delivery location name or ID' },
+                    frequency: { type: 'string', description: 'Delivery frequency (daily, weekly, monthly, quarterly)' },
+                    fromDate: { type: 'string', format: 'date', description: 'Deal start date (YYYY-MM-DD)' },
+                    toDate: { type: 'string', format: 'date', description: 'Deal end date (YYYY-MM-DD)' },
+                    priceValue: { type: 'number', description: 'Fixed price per unit' },
+                    comments: { type: 'string', description: 'Additional comments' },
+                    activate: { type: 'boolean', description: 'Activate deal immediately', default: false },
+                    tradeInstrumentId: { type: 'number', description: 'Trade instrument type ID' },
+                    externalCounterPartyId: { type: 'number', description: 'External counterparty ID' },
+                    reason: { type: 'string', description: 'Reason for cancellation (used with cancel action)' }
                   }
                 },
                 dealId: {
                   type: 'string',
-                  pattern: '^[A-Z0-9-]+$',
-                  description: 'Required for update/get/delete: existing deal ID (format: QDE-XXXXX-YYYY-ZZZZ)'
+                  description: 'Required for update/get/delete/cancel/history/validate: existing deal ID (numeric format: 12345)'
+                },
+                status: {
+                  type: 'string',
+                  enum: ['Draft', 'Active', 'Cancelled', 'Completed'],
+                  description: 'Required for update-status: new status to set'
+                },
+                filters: {
+                  type: 'object',
+                  description: 'Optional for list: filter criteria',
+                  properties: {
+                    status: { type: 'string', enum: ['Draft', 'Active', 'Cancelled', 'Completed'], description: 'Filter by deal status' },
+                    fromDate: { type: 'string', format: 'date', description: 'Filter deals starting after this date' },
+                    toDate: { type: 'string', format: 'date', description: 'Filter deals ending before this date' },
+                    counterPartyId: { type: 'number', description: 'Filter by counterparty ID' },
+                    pageNumber: { type: 'number', minimum: 1, default: 1, description: 'Page number for pagination' },
+                    pageSize: { type: 'number', minimum: 1, maximum: 100, default: 10, description: 'Items per page' }
+                  }
                 }
               },
               required: ['action'],
