@@ -40,6 +40,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "dev": "tsx src/index.ts",
+    "demo": "tsx src/demo-enhanced-infrastructure.ts",
     "mcp-server": "tsx mcp/server/index.ts",
     "mock-api": "tsx mock-api/server.ts",
     "prepublishOnly": "npm run build"

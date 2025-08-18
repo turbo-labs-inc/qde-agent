@@ -385,6 +385,66 @@ app.post('/api/fake/tradeentry/basepricedefault', (req, res) => {
   });
 });
 
+// 12. POST /api/fake/tradeentry/create-deal
+app.post('/api/fake/tradeentry/create-deal', (req, res) => {
+  const { 
+    counterparty, 
+    product, 
+    quantity, 
+    originLocation, 
+    destinationLocation, 
+    frequency, 
+    fromDate, 
+    toDate,
+    priceValue,
+    comments,
+    activate 
+  } = req.body;
+  
+  // Validate required fields
+  if (!counterparty || !product || !quantity || !originLocation || !destinationLocation) {
+    return res.status(400).json({
+      error: 'Missing required fields',
+      required: ['counterparty', 'product', 'quantity', 'originLocation', 'destinationLocation']
+    });
+  }
+  
+  // Generate a unique deal ID
+  const dealId = `QDE-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+  
+  // Create the deal response
+  const deal = {
+    dealId,
+    status: activate ? 'Active' : 'Draft',
+    createdAt: new Date().toISOString(),
+    counterparty,
+    product,
+    quantity,
+    originLocation,
+    destinationLocation,
+    frequency: frequency || 'Monthly',
+    fromDate: fromDate || new Date().toISOString().split('T')[0],
+    toDate: toDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    pricing: {
+      priceValue: priceValue || 2.85,
+      currency: 'USD',
+      unit: 'gallon'
+    },
+    comments: comments || '',
+    activate: activate || false,
+    confirmationNumber: `CN-${Math.floor(Math.random() * 1000000)}`,
+    estimatedValue: (quantity * (priceValue || 2.85)).toFixed(2)
+  };
+  
+  console.log(`✅ Deal created: ${dealId} - ${counterparty} - ${quantity} ${product}`);
+  
+  res.status(201).json({
+    success: true,
+    message: 'Deal created successfully',
+    deal
+  });
+});
+
 // Error handling
 app.use((req, res) => {
   res.status(404).json({
@@ -402,7 +462,8 @@ app.use((req, res) => {
       'GET /api/fake/tradeentry/customindexpricetypes',
       'GET /api/fake/tradeentry/bookfromlocation/:id',
       'POST /api/fake/tradeentry/locationdiffpricedefault',
-      'POST /api/fake/tradeentry/basepricedefault'
+      'POST /api/fake/tradeentry/basepricedefault',
+      'POST /api/fake/tradeentry/create-deal'
     ]
   });
 });
