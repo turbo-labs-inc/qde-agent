@@ -1,205 +1,438 @@
 import { Node } from '../../src/pocket-flow';
 import { DealState, PriceComponent, OpisPrice, PricingStructure } from '../../src/types';
-import axios from 'axios';
+import { spawn } from 'child_process';
 
-interface PricingPrepResult {
-  dealData: any;
-  needsPricing: boolean;
-  locationId?: number;
-  productId?: number;
+interface PricingRequirements {
+  locationId?: string;
+  productId?: string;
   quantity?: number;
   frequency?: string;
+  dealData?: any;
 }
 
-interface PricingExecResult {
+interface PricingResults {
   priceComponents?: PriceComponent[];
   opisPrices?: OpisPrice[];
-  pricingCalculations?: any[];
-  calculatedPricing?: PricingStructure;
+  locationDiffPrice?: number;
+  basePriceDefault?: number;
+  finalPricing?: PricingStructure;
 }
 
 export class PricingAgent extends Node<DealState> {
-  private apiBaseUrl: string;
-
-  constructor(maxRetries = 3, wait = 1) {
+  constructor(maxRetries = 3, wait = 1000) {
     super(maxRetries, wait);
-    this.apiBaseUrl = process.env.QDE_API_BASE_URL || 'http://localhost:8000';
   }
 
-  async prep(shared: DealState): Promise<PricingPrepResult> {
+  async prep(shared: DealState): Promise<PricingRequirements> {
     console.log('💰 Pricing Agent: Analyzing pricing requirements...');
     
-    const dealData = shared.dealData || {};
+    // Extract pricing requirements from deal data and user requirements
+    const requirements: PricingRequirements = {};
     
-    // Extract location and product IDs from selected values
-    const originLocation = shared.originLocations?.find(
-      loc => loc.text === dealData.originLocation
-    );
-    const locationId = originLocation ? parseInt(originLocation.value) : 100;
+    // Parse location and product from user requirements or deal data
+    if (shared.dealData) {
+      requirements.dealData = shared.dealData;
+      
+      // Try to extract quantity from user requirements
+      const quantityMatch = shared.userRequirements.match(/(\d+(?:,\d{3})*)\s*gallons?/i);
+      if (quantityMatch) {
+        requirements.quantity = parseInt(quantityMatch[1].replace(/,/g, ''));
+      }
+      
+      // Extract product info - default to common products
+      if (shared.userRequirements.toLowerCase().includes('propane')) {
+        requirements.productId = '1'; // Propane
+      } else if (shared.userRequirements.toLowerCase().includes('gasoline')) {
+        requirements.productId = '5'; // Gasoline
+      } else {
+        requirements.productId = '1'; // Default to propane
+      }
+      
+      // Extract frequency
+      if (shared.userRequirements.toLowerCase().includes('monthly')) {
+        requirements.frequency = 'monthly';
+      } else if (shared.userRequirements.toLowerCase().includes('weekly')) {
+        requirements.frequency = 'weekly';
+      } else if (shared.userRequirements.toLowerCase().includes('daily')) {
+        requirements.frequency = 'daily';
+      } else {
+        requirements.frequency = 'monthly'; // Default
+      }
+    }
     
-    // Default product ID (in real system would be derived from product selection)
-    const productId = 5; // Gasoline Regular Unleaded
-    const quantity = dealData.quantity || 5000;
-    const frequency = dealData.frequency || 'Monthly';
-
-    return {
-      dealData,
-      needsPricing: true,
-      locationId,
-      productId,
-      quantity,
-      frequency
-    };
+    // Use location IDs from reference data if available
+    if (shared.originLocations && shared.originLocations.length > 0) {
+      requirements.locationId = shared.originLocations[0].value;
+    } else {
+      requirements.locationId = '100'; // Default Houston Terminal
+    }
+    
+    console.log(`  📊 Pricing requirements: Product ${requirements.productId}, Location ${requirements.locationId}, Quantity ${requirements.quantity}, Frequency ${requirements.frequency}`);
+    
+    return requirements;
   }
 
-  async exec(prepRes: PricingPrepResult): Promise<PricingExecResult> {
-    console.log('🔄 Pricing Agent: Fetching pricing data...');
+  async exec(prepRes: PricingRequirements): Promise<PricingResults> {
+    console.log('🔄 Pricing Agent: Calculating pricing components...');
     
-    const results: PricingExecResult = {};
-
+    const results: PricingResults = {};
+    
     try {
-      // 1. Fetch OPIS historical price
-      console.log('  📊 Fetching OPIS price data...');
-      const opisResponse = await axios.get(
-        `${this.apiBaseUrl}/api/fake/tradeentry/previousaverageopisprice`,
-        {
-          params: {
-            locationId: prepRes.locationId,
-            productId: prepRes.productId,
-            fromDateString: new Date().toISOString().split('T')[0]
-          }
-        }
-      );
-      results.opisPrices = [opisResponse.data];
-      console.log(`    ✓ OPIS average price: $${opisResponse.data.averagePrice}/gallon`);
-
-      // 2. Calculate location differential pricing
-      console.log('  📍 Calculating location differentials...');
-      const locationDiffResponse = await axios.post(
-        `${this.apiBaseUrl}/api/fake/tradeentry/locationdiffpricedefault`,
-        {
-          locationId: prepRes.locationId,
-          productId: prepRes.productId,
-          quantities: [prepRes.quantity]
-        }
-      );
-      const locationDiff = locationDiffResponse.data.calculations[0];
-      console.log(`    ✓ Location differential: $${locationDiff.differential}/gallon`);
-
-      // 3. Calculate base price defaults
-      console.log('  💵 Computing base price...');
-      const basePriceResponse = await axios.post(
-        `${this.apiBaseUrl}/api/fake/tradeentry/basepricedefault`,
-        {
-          priceDictionary: {
-            base: opisResponse.data.averagePrice,
-            premium: 0.05
-          },
-          frequencyType: prepRes.frequency,
-          quantities: [prepRes.quantity]
-        }
-      );
-      const basePricing = basePriceResponse.data.pricingBreakdown[0];
-      console.log(`    ✓ Final price: $${basePricing.finalPrice}/gallon`);
-
-      // 4. Fetch price components for additional details
-      console.log('  📋 Getting price component details...');
-      const componentResponse = await axios.get(
-        `${this.apiBaseUrl}/api/fake/tradeentry/pricecomponents/123`
+      // 1. Get current market pricing data (OPIS prices)
+      console.log('  📈 Fetching current OPIS pricing...');
+      results.opisPrices = await this.mcpFetchOpisPrices(
+        prepRes.locationId || '100',
+        prepRes.productId || '1'
       );
       
-      // Create comprehensive price component
-      const priceComponent: PriceComponent = {
-        basePrice: basePricing.finalPrice,
-        locationDifferential: locationDiff.differential,
-        transportCost: 0.15, // From component data
-        fuelSurcharge: 0.08,
-        totalPrice: basePricing.finalPrice + locationDiff.differential,
-        currency: 'USD',
-        unit: 'gallon',
-        effectiveDate: new Date().toISOString()
-      };
+      // 2. Get price components breakdown
+      console.log('  🧮 Fetching price components...');
+      results.priceComponents = await this.mcpFetchPriceComponents();
       
-      results.priceComponents = [priceComponent];
-      results.pricingCalculations = [
-        locationDiffResponse.data,
-        basePriceResponse.data
-      ];
+      // 3. Calculate location differential pricing
+      if (prepRes.quantity) {
+        console.log('  📍 Calculating location differentials...');
+        results.locationDiffPrice = await this.mcpCalculateLocationDiffPrice(
+          prepRes.locationId || '100',
+          prepRes.productId || '1',
+          [prepRes.quantity]
+        );
+      }
       
-      // Create final pricing structure
-      results.calculatedPricing = {
-        basePrice: basePricing.finalPrice,
-        locationDifferential: locationDiff.differential,
-        totalPrice: priceComponent.totalPrice,
-        currency: 'USD',
-        unit: 'gallon'
-      };
-
-      console.log('✅ Pricing Agent: All pricing data collected successfully');
-      console.log(`  📊 Total price: $${priceComponent.totalPrice.toFixed(3)}/gallon`);
-      console.log(`  📦 For ${prepRes.quantity} gallons = $${(priceComponent.totalPrice * (prepRes.quantity || 0)).toFixed(2)}`);
-
-    } catch (error: any) {
-      console.error('❌ Pricing Agent: Error fetching pricing data:', error.response?.data || error.message);
-      // Use fallback pricing if API fails
-      return await this.execFallback(prepRes, error);
+      // 4. Calculate base price defaults
+      console.log('  💵 Calculating base price defaults...');
+      results.basePriceDefault = await this.mcpCalculateBasePriceDefault(
+        prepRes.frequency || 'monthly',
+        prepRes.quantity || 1000
+      );
+      
+      // 5. Combine all pricing into final structure
+      results.finalPricing = this.combinePricingComponents(results, prepRes);
+      
+      console.log('✅ Pricing Agent: All pricing calculations completed');
+      
+    } catch (error) {
+      console.error('⚠️  Pricing calculation failed, using fallback:', error);
+      results.finalPricing = this.generateFallbackPricing(prepRes);
     }
-
+    
     return results;
   }
 
   async post(
     shared: DealState,
-    prepRes: PricingPrepResult,
-    execRes: PricingExecResult
+    prepRes: PricingRequirements,
+    execRes: PricingResults
   ): Promise<string> {
-    // Update shared state with pricing data
-    if (execRes.priceComponents) {
-      shared.priceComponents = execRes.priceComponents;
+    // Update shared state with pricing results
+    shared.priceComponents = execRes.priceComponents;
+    shared.opisPrices = execRes.opisPrices;
+    
+    // Update deal data with final pricing
+    if (!shared.dealData) {
+      shared.dealData = {};
     }
-    if (execRes.opisPrices) {
-      shared.opisPrices = execRes.opisPrices;
-    }
-    if (execRes.pricingCalculations) {
-      shared.pricingCalculations = execRes.pricingCalculations;
+    shared.dealData.pricing = execRes.finalPricing;
+    
+    // Set phase to validation
+    shared.phase = 'pricing';
+    
+    console.log('💾 Pricing Agent: Updated shared state with pricing data');
+    
+    // Determine next action
+    if (execRes.finalPricing && execRes.finalPricing.totalPrice > 0) {
+      console.log(`  💰 Final pricing: $${execRes.finalPricing.totalPrice.toFixed(2)} total`);
+      return 'validation';  // Move to validation
     }
     
-    // Update deal data with calculated pricing
-    if (execRes.calculatedPricing && shared.dealData) {
-      shared.dealData.pricing = execRes.calculatedPricing;
-    }
-
-    console.log('💾 Pricing Agent: Updated shared state with pricing information');
-    
-    // Move to validation phase
-    shared.phase = 'validation';
-    return 'validation';
+    return 'pricing-error';  // Pricing failed, handle error
   }
 
-  async execFallback(prepRes: PricingPrepResult, error: Error): Promise<PricingExecResult> {
-    console.error('❌ Pricing Agent: Failed to calculate pricing:', error.message);
+  // MCP-powered OPIS price fetching
+  private async mcpFetchOpisPrices(locationId: string, productId: string): Promise<OpisPrice[]> {
+    try {
+      console.log(`  🔗 Using MCP to fetch OPIS prices for location ${locationId}, product ${productId}`);
+      
+      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+      const mcpResponse = await this.callMCPTool('get-market-pricing-data', {
+        type: 'opis-price',
+        locationId: parseInt(locationId),
+        productId: parseInt(productId),
+        fromDateString: today
+      });
+      
+      // Parse OPIS price response
+      const priceMatch = mcpResponse.match(/OPIS price: \$?([\d.]+)/i);
+      if (priceMatch) {
+        const price = parseFloat(priceMatch[1]);
+        console.log(`  ✅ Retrieved OPIS price: $${price}`);
+        return [{
+          locationId,
+          productId,
+          date: today,
+          price,
+          priceType: 'OPIS Average',
+          publisher: 'OPIS'
+        }];
+      }
+      
+    } catch (error) {
+      console.error('⚠️  MCP OPIS price fetch failed:', error);
+    }
     
-    // Return default pricing as fallback
-    const defaultPricing: PricingStructure = {
-      basePrice: 2.85,
-      locationDifferential: 0.05,
-      totalPrice: 2.90,
-      currency: 'USD',
-      unit: 'gallon'
-    };
+    // Fallback to mock data
+    console.log('  📦 Using mock OPIS pricing data');
+    return this.mockFetchOpisPrices(locationId, productId);
+  }
 
+  // MCP-powered price components fetching
+  private async mcpFetchPriceComponents(): Promise<PriceComponent[]> {
+    try {
+      console.log(`  🔗 Using MCP to fetch price components`);
+      
+      const mcpResponse = await this.callMCPTool('get-market-pricing-data', {
+        type: 'price-components',
+        id: 123 // Example price ID
+      });
+      
+      // Parse price components response
+      if (mcpResponse.includes('Price components:')) {
+        const components: PriceComponent[] = [];
+        const matches = mcpResponse.match(/(\w+): \$?([\d.]+)/gi);
+        if (matches) {
+          for (const match of matches) {
+            const parts = match.match(/(\w+): \$?([\d.]+)/i);
+            if (parts) {
+              components.push({
+                name: parts[1],
+                value: parseFloat(parts[2]),
+                type: 'component'
+              });
+            }
+          }
+        }
+        if (components.length > 0) {
+          console.log(`  ✅ Retrieved ${components.length} price components`);
+          return components;
+        }
+      }
+      
+    } catch (error) {
+      console.error('⚠️  MCP price components fetch failed:', error);
+    }
+    
+    // Fallback to mock data
+    console.log('  📦 Using mock price components data');
+    return this.mockFetchPriceComponents();
+  }
+
+  // MCP-powered location differential calculation
+  private async mcpCalculateLocationDiffPrice(
+    locationId: string, 
+    productId: string, 
+    quantities: number[]
+  ): Promise<number> {
+    try {
+      console.log(`  🔗 Using MCP to calculate location differential for location ${locationId}`);
+      
+      const mcpResponse = await this.callMCPTool('calculate-trade-pricing', {
+        type: 'location-diff-price',
+        locationId: parseInt(locationId),
+        productId: parseInt(productId),
+        quantities
+      });
+      
+      // Parse location differential response
+      const priceMatch = mcpResponse.match(/differential price: \$?([\d.-]+)/i);
+      if (priceMatch) {
+        const diffPrice = parseFloat(priceMatch[1]);
+        console.log(`  ✅ Location differential: $${diffPrice}`);
+        return diffPrice;
+      }
+      
+    } catch (error) {
+      console.error('⚠️  MCP location differential calculation failed:', error);
+    }
+    
+    // Fallback calculation
+    console.log('  📦 Using fallback location differential calculation');
+    return 0.05; // Default $0.05 differential
+  }
+
+  // MCP-powered base price calculation
+  private async mcpCalculateBasePriceDefault(
+    frequency: string,
+    quantity: number
+  ): Promise<number> {
+    try {
+      console.log(`  🔗 Using MCP to calculate base price for ${frequency} frequency`);
+      
+      // Create a simple price dictionary for the calculation
+      const priceDictionary = {
+        "0": 2.85,  // Current month
+        "1": 2.87,  // Next month
+        "2": 2.89,  // Month after
+        "3": 2.91   // Future months
+      };
+      
+      const mcpResponse = await this.callMCPTool('calculate-trade-pricing', {
+        type: 'base-price-default',
+        priceDictionary,
+        frequencyType: frequency,
+        quantities: [quantity]
+      });
+      
+      // Parse base price response
+      const priceMatch = mcpResponse.match(/base price: \$?([\d.]+)/i);
+      if (priceMatch) {
+        const basePrice = parseFloat(priceMatch[1]);
+        console.log(`  ✅ Base price: $${basePrice}`);
+        return basePrice;
+      }
+      
+    } catch (error) {
+      console.error('⚠️  MCP base price calculation failed:', error);
+    }
+    
+    // Fallback calculation
+    console.log('  📦 Using fallback base price calculation');
+    return 2.85; // Default base price
+  }
+
+  // Combine all pricing components into final structure
+  private combinePricingComponents(
+    results: PricingResults,
+    requirements: PricingRequirements
+  ): PricingStructure {
+    const basePrice = results.basePriceDefault || 2.85;
+    const locationDiff = results.locationDiffPrice || 0.05;
+    const quantity = requirements.quantity || 1000;
+    
+    // Calculate total price per gallon
+    const pricePerGallon = basePrice + locationDiff;
+    const totalPrice = pricePerGallon * quantity;
+    
     return {
-      calculatedPricing: defaultPricing,
-      priceComponents: [{
-        basePrice: 2.85,
-        locationDifferential: 0.05,
-        transportCost: 0.15,
-        fuelSurcharge: 0.08,
-        totalPrice: 2.90,
-        currency: 'USD',
-        unit: 'gallon',
-        effectiveDate: new Date().toISOString()
-      }]
+      basePrice,
+      locationDifferential: locationDiff,
+      pricePerGallon,
+      quantity,
+      totalPrice,
+      components: results.priceComponents || [],
+      opisReference: results.opisPrices?.[0]?.price || basePrice,
+      currency: 'USD',
+      calculatedAt: new Date().toISOString()
     };
+  }
+
+  // Generate fallback pricing when MCP fails
+  private generateFallbackPricing(requirements: PricingRequirements): PricingStructure {
+    const quantity = requirements.quantity || 1000;
+    const basePrice = 2.85;
+    const locationDiff = 0.05;
+    const pricePerGallon = basePrice + locationDiff;
+    const totalPrice = pricePerGallon * quantity;
+    
+    return {
+      basePrice,
+      locationDifferential: locationDiff,
+      pricePerGallon,
+      quantity,
+      totalPrice,
+      components: this.mockFetchPriceComponents(),
+      opisReference: basePrice,
+      currency: 'USD',
+      calculatedAt: new Date().toISOString(),
+      note: 'Fallback pricing - MCP unavailable'
+    };
+  }
+
+  // Helper method to call MCP tools (same pattern as Data Collection Agent)
+  private async callMCPTool(toolName: string, args: any): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const mcpPath = '/Users/nickbrooks/work/alliance/qde-agent/mcp/server/index.ts';
+      const child = spawn('npx', ['tsx', mcpPath]);
+      
+      let output = '';
+      let error = '';
+
+      child.stdout.on('data', (data) => {
+        output += data.toString();
+      });
+
+      child.stderr.on('data', (data) => {
+        error += data.toString();
+      });
+
+      child.on('close', (code) => {
+        if (code === 0) {
+          try {
+            // Parse JSON-RPC response
+            const lines = output.split('\n').filter(line => line.trim());
+            for (const line of lines) {
+              try {
+                const response = JSON.parse(line);
+                if (response.result && response.result.content) {
+                  resolve(response.result.content[0].text);
+                  return;
+                }
+              } catch (parseError) {
+                // Continue to next line
+              }
+            }
+            reject(new Error('No valid JSON-RPC response found'));
+          } catch (parseError) {
+            reject(new Error(`Failed to parse MCP response: ${parseError}`));
+          }
+        } else {
+          reject(new Error(`MCP call failed with code ${code}: ${error}`));
+        }
+      });
+
+      // Send the tool call request
+      const request = {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: toolName,
+          arguments: args
+        }
+      };
+      
+      child.stdin.write(JSON.stringify(request) + '\n');
+      child.stdin.end();
+    });
+  }
+
+  // Mock data methods for fallback
+  private async mockFetchOpisPrices(locationId: string, productId: string): Promise<OpisPrice[]> {
+    return [{
+      locationId,
+      productId,
+      date: new Date().toISOString().split('T')[0],
+      price: 2.85,
+      priceType: 'OPIS Average',
+      publisher: 'OPIS'
+    }];
+  }
+
+  private mockFetchPriceComponents(): PriceComponent[] {
+    return [
+      { name: 'Base Price', value: 2.80, type: 'base' },
+      { name: 'Location Differential', value: 0.05, type: 'differential' },
+      { name: 'Fuel Surcharge', value: 0.02, type: 'surcharge' },
+      { name: 'Transportation', value: 0.03, type: 'logistics' }
+    ];
+  }
+
+  async execFallback(prepRes: PricingRequirements, error: Error): Promise<PricingResults> {
+    console.error('❌ Pricing Agent: Failed to calculate pricing:', error.message);
+    return {
+      finalPricing: this.generateFallbackPricing(prepRes),
+      error: 'Failed to calculate pricing',
+      details: error.message,
+      timestamp: new Date().toISOString()
+    } as any;
   }
 }

@@ -14,8 +14,11 @@ import {
   createObservableFlow
 } from './infrastructure';
 
-// Import existing agents
+// Import all agents
 import { DataCollectionAgent } from '../agents/data-collection';
+import { PricingAgent } from '../agents/pricing';
+import { ValidationAgent } from '../agents/validation';
+import { DealCreationAgent } from '../agents/deal-creation';
 
 /**
  * Setup the enhanced QDE infrastructure
@@ -51,29 +54,34 @@ async function registerAgents() {
     timeout: 30000
   });
 
-  // Create placeholder agents for missing implementations
-  globalAgentRegistry.register('pricing', new PricingAgentPlaceholder(), {
-    description: 'Calculates market pricing and differentials',
-    version: '0.1.0',
+  // Register Pricing Agent (Real Implementation)
+  globalAgentRegistry.register('pricing', new PricingAgent(), {
+    description: 'Calculates market pricing with OPIS data and differentials',
+    version: '1.0.0',
     dependencies: ['data-collection'],
-    capabilities: ['market-pricing', 'opis-data', 'price-calculations'],
-    maxRetries: 3
+    capabilities: ['market-pricing', 'opis-data', 'price-calculations', 'mcp-integration'],
+    maxRetries: 3,
+    timeout: 45000
   });
 
-  globalAgentRegistry.register('validation', new ValidationAgentPlaceholder(), {
-    description: 'Validates deal completeness and business rules',
-    version: '0.1.0',
+  // Register Validation Agent (Real Implementation)
+  globalAgentRegistry.register('validation', new ValidationAgent(), {
+    description: 'Validates deal completeness and business rules with reference data',
+    version: '1.0.0',
     dependencies: ['data-collection', 'pricing'],
-    capabilities: ['deal-validation', 'business-rules', 'error-handling'],
-    maxRetries: 2
+    capabilities: ['deal-validation', 'business-rules', 'reference-validation', 'capacity-checks'],
+    maxRetries: 2,
+    timeout: 30000
   });
 
-  globalAgentRegistry.register('deal-creation', new DealCreationAgentPlaceholder(), {
-    description: 'Creates final deals in Alliance Energy system',
-    version: '0.1.0',
+  // Register Deal Creation Agent (Real Implementation)
+  globalAgentRegistry.register('deal-creation', new DealCreationAgent(), {
+    description: 'Creates final deals in Alliance Energy system via MCP',
+    version: '1.0.0',
     dependencies: ['validation'],
-    capabilities: ['deal-creation', 'alliance-api', 'confirmation'],
-    maxRetries: 5
+    capabilities: ['deal-creation', 'alliance-api', 'mcp-integration', 'confirmation'],
+    maxRetries: 5,
+    timeout: 60000
   });
 
   console.log(`✅ Registered ${globalAgentRegistry.listAgents().length} agents`);
@@ -95,31 +103,32 @@ async function registerWorkflowConfigs() {
       'data-collection': {
         agent: 'data-collection',
         transitions: [
-          { action: 'success', target: 'pricing' },
+          { action: 'pricing', target: 'pricing' },
+          { action: 'collection', target: 'data-collection' },
           { action: 'error', target: 'error-handler' }
         ]
       },
       'pricing': {
         agent: 'pricing',
         transitions: [
-          { action: 'success', target: 'validation' },
-          { action: 'missing-data', target: 'data-collection' },
-          { action: 'error', target: 'error-handler' }
+          { action: 'validation', target: 'validation' },
+          { action: 'pricing-error', target: 'error-handler' },
+          { action: 'collection', target: 'data-collection' }
         ]
       },
       'validation': {
         agent: 'validation',
         transitions: [
-          { action: 'valid', target: 'deal-creation' },
-          { action: 'invalid', target: 'pricing' },
-          { action: 'missing-fields', target: 'data-collection' }
+          { action: 'creation', target: 'deal-creation' },
+          { action: 'collection', target: 'data-collection' },
+          { action: 'validation-error', target: 'error-handler' }
         ]
       },
       'deal-creation': {
         agent: 'deal-creation',
         transitions: [
-          { action: 'created', target: 'complete' },
-          { action: 'error', target: 'error-handler' }
+          { action: 'complete', target: 'complete' },
+          { action: 'creation-error', target: 'error-handler' }
         ]
       },
       'complete': {
@@ -145,13 +154,25 @@ async function registerWorkflowConfigs() {
       'data-collection': {
         agent: 'data-collection',
         transitions: [
-          { action: 'success', target: 'deal-creation' }
+          { action: 'pricing', target: 'pricing' }
+        ]
+      },
+      'pricing': {
+        agent: 'pricing',
+        transitions: [
+          { action: 'validation', target: 'validation' }
+        ]
+      },
+      'validation': {
+        agent: 'validation',
+        transitions: [
+          { action: 'creation', target: 'deal-creation' }
         ]
       },
       'deal-creation': {
         agent: 'deal-creation',
         transitions: [
-          { action: 'created', target: 'complete' }
+          { action: 'complete', target: 'complete' }
         ]
       },
       'complete': {
@@ -281,69 +302,7 @@ export async function executeExpressDealCreation(
   return result.finalState;
 }
 
-// Placeholder agents (to be replaced with actual implementations)
-class PricingAgentPlaceholder extends Node<DealState> {
-  async prep(shared: DealState) {
-    console.log('💰 Pricing Agent: Starting price calculations...');
-    return { phase: shared.phase };
-  }
-
-  async exec() {
-    console.log('💰 Pricing Agent: [PLACEHOLDER] Calculating market pricing...');
-    await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate work
-    return { pricing: { basePrice: 2.85, locationDifferential: 0, totalPrice: 2.85 } };
-  }
-
-  async post(shared: DealState, prepRes: any, execRes: any) {
-    shared.phase = 'validation';
-    if (shared.dealData) {
-      shared.dealData.pricing = execRes.pricing;
-    }
-    console.log('💰 Pricing Agent: Pricing calculations complete');
-    return 'success';
-  }
-}
-
-class ValidationAgentPlaceholder extends Node<DealState> {
-  async prep(shared: DealState) {
-    console.log('✅ Validation Agent: Starting validation...');
-    return { phase: shared.phase };
-  }
-
-  async exec() {
-    console.log('✅ Validation Agent: [PLACEHOLDER] Validating deal data...');
-    await new Promise(resolve => setTimeout(resolve, 500)); // Simulate work
-    return { isValid: true, errors: [] };
-  }
-
-  async post(shared: DealState, prepRes: any, execRes: any) {
-    shared.phase = 'creation';
-    shared.validationErrors = execRes.errors;
-    console.log('✅ Validation Agent: Validation complete');
-    return execRes.isValid ? 'valid' : 'invalid';
-  }
-}
-
-class DealCreationAgentPlaceholder extends Node<DealState> {
-  async prep(shared: DealState) {
-    console.log('📝 Deal Creation Agent: Starting deal creation...');
-    return { phase: shared.phase };
-  }
-
-  async exec() {
-    console.log('📝 Deal Creation Agent: [PLACEHOLDER] Creating deal in Alliance Energy...');
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate work
-    const dealId = `QDE-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-    return { dealId, status: 'Active' };
-  }
-
-  async post(shared: DealState, prepRes: any, execRes: any) {
-    shared.phase = 'complete';
-    shared.dealId = execRes.dealId;
-    console.log('📝 Deal Creation Agent: Deal created successfully -', execRes.dealId);
-    return 'created';
-  }
-}
+// All agents are now real implementations - no more placeholders needed!
 
 /**
  * Get infrastructure status

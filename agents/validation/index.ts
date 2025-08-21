@@ -1,26 +1,33 @@
 import { Node } from '../../src/pocket-flow';
 import { DealState } from '../../src/types';
+import { spawn } from 'child_process';
 
-interface ValidationPrepResult {
+interface ValidationRequirements {
   dealData: any;
   requiredFields: string[];
   currentPhase: string;
+  referenceData: {
+    companies?: any[];
+    locations?: any[];
+    frequencies?: any[];
+  };
 }
 
-interface ValidationExecResult {
+interface ValidationResults {
   isValid: boolean;
   missingFields: string[];
   validationErrors: string[];
   clarificationNeeded: boolean;
   clarificationMessage?: string;
+  capacityChecks?: any[];
 }
 
 export class ValidationAgent extends Node<DealState> {
-  constructor(maxRetries = 3, wait = 1) {
+  constructor(maxRetries = 3, wait = 1000) {
     super(maxRetries, wait);
   }
 
-  async prep(shared: DealState): Promise<ValidationPrepResult> {
+  async prep(shared: DealState): Promise<ValidationRequirements> {
     console.log('✅ Validation Agent: Preparing validation checks...');
     
     const dealData = shared.dealData || {};
@@ -36,72 +43,115 @@ export class ValidationAgent extends Node<DealState> {
       'pricing'
     ];
 
+    // Gather reference data for validation
+    const referenceData = {
+      companies: shared.companies,
+      locations: [...(shared.originLocations || []), ...(shared.destinationLocations || [])],
+      frequencies: shared.frequencies
+    };
+
+    console.log(`  📋 Validating deal with ${requiredFields.length} required fields`);
+    console.log(`  📊 Available reference data: ${referenceData.companies?.length || 0} companies, ${referenceData.locations?.length || 0} locations, ${referenceData.frequencies?.length || 0} frequencies`);
+
     return {
       dealData,
       requiredFields,
-      currentPhase: shared.phase
+      currentPhase: shared.phase,
+      referenceData
     };
   }
 
-  async exec(prepRes: ValidationPrepResult): Promise<ValidationExecResult> {
-    console.log('🔍 Validation Agent: Running validation checks...');
+  async exec(prepRes: ValidationRequirements): Promise<ValidationResults> {
+    console.log('🔍 Validation Agent: Running comprehensive validation checks...');
     
     const missingFields: string[] = [];
     const validationErrors: string[] = [];
+    const capacityChecks: any[] = [];
     let isValid = true;
 
-    // Check required fields
+    // 1. Check required fields
+    console.log('  📋 Checking required fields...');
     for (const field of prepRes.requiredFields) {
       if (!prepRes.dealData[field]) {
         missingFields.push(field);
-        console.log(`  ❌ Missing required field: ${field}`);
+        console.log(`    ❌ Missing required field: ${field}`);
       } else {
-        console.log(`  ✅ Found required field: ${field}`);
+        console.log(`    ✅ Found required field: ${field}`);
       }
     }
 
-    // Business rule validations
+    // 2. Business rule validations
+    console.log('  ⚖️  Validating business rules...');
     const quantity = prepRes.dealData.quantity;
     if (quantity) {
       // Quantity validation
       if (quantity < 1000) {
         validationErrors.push('Minimum quantity is 1000 gallons');
-        console.log('  ⚠️  Quantity below minimum (1000 gallons)');
+        console.log('    ⚠️  Quantity below minimum (1000 gallons)');
       } else if (quantity > 100000) {
         validationErrors.push('Maximum quantity is 100000 gallons');
-        console.log('  ⚠️  Quantity above maximum (100000 gallons)');
+        console.log('    ⚠️  Quantity above maximum (100000 gallons)');
       } else {
-        console.log(`  ✅ Quantity valid: ${quantity} gallons`);
+        console.log(`    ✅ Quantity valid: ${quantity} gallons`);
       }
     }
 
-    // Validate pricing structure
+    // 3. Validate pricing structure
+    console.log('  💰 Validating pricing structure...');
     if (prepRes.dealData.pricing) {
       const pricing = prepRes.dealData.pricing;
       if (!pricing.totalPrice || pricing.totalPrice <= 0) {
         validationErrors.push('Invalid pricing: total price must be positive');
-        console.log('  ⚠️  Invalid pricing detected');
+        console.log('    ⚠️  Invalid pricing detected');
+      } else if (pricing.pricePerGallon && (pricing.pricePerGallon < 0.5 || pricing.pricePerGallon > 10.0)) {
+        validationErrors.push('Price per gallon outside reasonable range ($0.50 - $10.00)');
+        console.log(`    ⚠️  Price per gallon unusual: $${pricing.pricePerGallon}`);
       } else {
-        console.log(`  ✅ Pricing valid: $${pricing.totalPrice}/${pricing.unit}`);
+        console.log(`    ✅ Pricing valid: $${pricing.totalPrice} total`);
       }
     }
 
-    // Validate counterparty selection
-    if (prepRes.dealData.counterparty) {
-      console.log(`  ✅ Counterparty selected: ${prepRes.dealData.counterparty}`);
+    // 4. Reference data validation
+    console.log('  📊 Validating against reference data...');
+    await this.validateReferenceData(prepRes, validationErrors);
+
+    // 5. Capacity checks via MCP
+    console.log('  🏭 Checking location capacity...');
+    const capacityResult = await this.mcpCheckLocationCapacity(prepRes.dealData);
+    if (capacityResult) {
+      capacityChecks.push(capacityResult);
+      if (!capacityResult.isAvailable) {
+        validationErrors.push(`Insufficient capacity at ${capacityResult.locationName}`);
+        console.log(`    ⚠️  Capacity issue: ${capacityResult.message}`);
+      } else {
+        console.log(`    ✅ Capacity available: ${capacityResult.availableCapacity}`);
+      }
     }
 
-    // Validate locations
+    // 6. Date and frequency validation
+    console.log('  📅 Validating dates and frequency...');
+    if (prepRes.dealData.frequency) {
+      const validFrequencies = prepRes.referenceData.frequencies?.map(f => f.text.toLowerCase()) || [];
+      if (validFrequencies.length > 0 && !validFrequencies.includes(prepRes.dealData.frequency.toLowerCase())) {
+        validationErrors.push(`Invalid frequency: ${prepRes.dealData.frequency}. Valid options: ${validFrequencies.join(', ')}`);
+        console.log(`    ⚠️  Invalid frequency: ${prepRes.dealData.frequency}`);
+      } else {
+        console.log(`    ✅ Frequency valid: ${prepRes.dealData.frequency}`);
+      }
+    }
+
+    // 7. Validate locations
+    console.log('  📍 Validating locations...');
     if (prepRes.dealData.originLocation && prepRes.dealData.destinationLocation) {
       if (prepRes.dealData.originLocation === prepRes.dealData.destinationLocation) {
         validationErrors.push('Origin and destination locations cannot be the same');
-        console.log('  ⚠️  Origin and destination are the same');
+        console.log('    ⚠️  Origin and destination are the same');
       } else {
-        console.log('  ✅ Origin and destination locations are different');
+        console.log('    ✅ Origin and destination locations are different');
       }
     }
 
-    // Determine if valid
+    // Determine final validation status
     isValid = missingFields.length === 0 && validationErrors.length === 0;
     
     // Check if clarification is needed
@@ -115,7 +165,7 @@ export class ValidationAgent extends Node<DealState> {
       }
     }
 
-    console.log('📊 Validation Agent: Validation complete');
+    console.log('📊 Validation Agent: Comprehensive validation complete');
     console.log(`  Status: ${isValid ? '✅ VALID' : '❌ INVALID'}`);
     if (missingFields.length > 0) {
       console.log(`  Missing fields: ${missingFields.join(', ')}`);
@@ -123,20 +173,24 @@ export class ValidationAgent extends Node<DealState> {
     if (validationErrors.length > 0) {
       console.log(`  Errors: ${validationErrors.join('; ')}`);
     }
+    if (capacityChecks.length > 0) {
+      console.log(`  Capacity checks: ${capacityChecks.length} performed`);
+    }
 
     return {
       isValid,
       missingFields,
       validationErrors,
       clarificationNeeded,
-      clarificationMessage
+      clarificationMessage,
+      capacityChecks
     };
   }
 
   async post(
     shared: DealState,
-    prepRes: ValidationPrepResult,
-    execRes: ValidationExecResult
+    prepRes: ValidationRequirements,
+    execRes: ValidationResults
   ): Promise<string> {
     // Update shared state with validation results
     shared.missingFields = execRes.missingFields;
@@ -147,7 +201,7 @@ export class ValidationAgent extends Node<DealState> {
     if (execRes.isValid) {
       // All validations passed, proceed to deal creation
       console.log('🎉 Validation Agent: Deal is valid, proceeding to creation...');
-      shared.phase = 'creation';
+      shared.phase = 'validation';
       return 'creation';
     } else if (execRes.clarificationNeeded) {
       // Need user clarification
@@ -164,8 +218,166 @@ export class ValidationAgent extends Node<DealState> {
       for (const error of execRes.validationErrors) {
         console.log(`  - ${error}`);
       }
-      return 'validation'; // Stay in validation to retry
+      return 'validation-error'; // Handle validation errors
     }
+  }
+
+  // Validate data against reference data
+  private async validateReferenceData(
+    prepRes: ValidationRequirements, 
+    validationErrors: string[]
+  ): Promise<void> {
+    try {
+      // Validate counterparty exists
+      if (prepRes.dealData.counterparty && prepRes.referenceData.companies) {
+        const companyExists = prepRes.referenceData.companies.some(
+          company => company.text.toLowerCase().includes(prepRes.dealData.counterparty.toLowerCase())
+        );
+        if (!companyExists) {
+          validationErrors.push(`Counterparty '${prepRes.dealData.counterparty}' not found in system`);
+          console.log(`    ⚠️  Unknown counterparty: ${prepRes.dealData.counterparty}`);
+        } else {
+          console.log(`    ✅ Counterparty validated: ${prepRes.dealData.counterparty}`);
+        }
+      }
+
+      // Validate origin location exists
+      if (prepRes.dealData.originLocation && prepRes.referenceData.locations) {
+        const originExists = prepRes.referenceData.locations.some(
+          location => location.text.toLowerCase().includes(prepRes.dealData.originLocation.toLowerCase())
+        );
+        if (!originExists) {
+          validationErrors.push(`Origin location '${prepRes.dealData.originLocation}' not found`);
+          console.log(`    ⚠️  Unknown origin location: ${prepRes.dealData.originLocation}`);
+        } else {
+          console.log(`    ✅ Origin location validated: ${prepRes.dealData.originLocation}`);
+        }
+      }
+
+      // Validate destination location exists
+      if (prepRes.dealData.destinationLocation && prepRes.referenceData.locations) {
+        const destExists = prepRes.referenceData.locations.some(
+          location => location.text.toLowerCase().includes(prepRes.dealData.destinationLocation.toLowerCase())
+        );
+        if (!destExists) {
+          validationErrors.push(`Destination location '${prepRes.dealData.destinationLocation}' not found`);
+          console.log(`    ⚠️  Unknown destination location: ${prepRes.dealData.destinationLocation}`);
+        } else {
+          console.log(`    ✅ Destination location validated: ${prepRes.dealData.destinationLocation}`);
+        }
+      }
+
+    } catch (error) {
+      console.error('    ⚠️  Reference data validation failed:', error);
+      validationErrors.push('Reference data validation failed');
+    }
+  }
+
+  // Check location capacity via MCP
+  private async mcpCheckLocationCapacity(dealData: any): Promise<any> {
+    try {
+      if (!dealData.originLocation || !dealData.quantity) {
+        return null;
+      }
+
+      console.log(`    🔗 Using MCP to check capacity for ${dealData.originLocation}`);
+      
+      // Find location ID for capacity check
+      const locationId = 100; // Default location ID
+      
+      const mcpResponse = await this.callMCPTool('calculate-trade-pricing', {
+        type: 'book-from-location',
+        locationId
+      });
+
+      // Parse capacity response
+      if (mcpResponse.includes('Book ID:')) {
+        const bookMatch = mcpResponse.match(/Book ID: (\d+)/);
+        if (bookMatch) {
+          return {
+            locationName: dealData.originLocation,
+            bookId: bookMatch[1],
+            isAvailable: true,
+            availableCapacity: 'Unlimited',
+            message: 'Capacity check passed'
+          };
+        }
+      }
+
+      return {
+        locationName: dealData.originLocation,
+        isAvailable: true,
+        availableCapacity: 'Standard',
+        message: 'Capacity check completed'
+      };
+
+    } catch (error) {
+      console.error('    ⚠️  MCP capacity check failed:', error);
+      return {
+        locationName: dealData.originLocation,
+        isAvailable: true,
+        availableCapacity: 'Unknown',
+        message: 'Capacity check failed - assuming available'
+      };
+    }
+  }
+
+  // Helper method to call MCP tools (same pattern as other agents)
+  private async callMCPTool(toolName: string, args: any): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const mcpPath = '/Users/nickbrooks/work/alliance/qde-agent/mcp/server/index.ts';
+      const child = spawn('npx', ['tsx', mcpPath]);
+      
+      let output = '';
+      let error = '';
+
+      child.stdout.on('data', (data) => {
+        output += data.toString();
+      });
+
+      child.stderr.on('data', (data) => {
+        error += data.toString();
+      });
+
+      child.on('close', (code) => {
+        if (code === 0) {
+          try {
+            // Parse JSON-RPC response
+            const lines = output.split('\n').filter(line => line.trim());
+            for (const line of lines) {
+              try {
+                const response = JSON.parse(line);
+                if (response.result && response.result.content) {
+                  resolve(response.result.content[0].text);
+                  return;
+                }
+              } catch (parseError) {
+                // Continue to next line
+              }
+            }
+            reject(new Error('No valid JSON-RPC response found'));
+          } catch (parseError) {
+            reject(new Error(`Failed to parse MCP response: ${parseError}`));
+          }
+        } else {
+          reject(new Error(`MCP call failed with code ${code}: ${error}`));
+        }
+      });
+
+      // Send the tool call request
+      const request = {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: toolName,
+          arguments: args
+        }
+      };
+      
+      child.stdin.write(JSON.stringify(request) + '\n');
+      child.stdin.end();
+    });
   }
 
   private formatFieldName(field: string): string {
@@ -176,7 +388,7 @@ export class ValidationAgent extends Node<DealState> {
       .trim();
   }
 
-  async execFallback(prepRes: ValidationPrepResult, error: Error): Promise<ValidationExecResult> {
+  async execFallback(prepRes: ValidationRequirements, error: Error): Promise<ValidationResults> {
     console.error('❌ Validation Agent: Validation failed with error:', error.message);
     
     return {

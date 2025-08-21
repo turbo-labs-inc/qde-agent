@@ -99,6 +99,18 @@ export class DataCollectionAgent extends Node<DealState> {
       shared.frequencies = execRes.frequencies;
     }
 
+    // Parse user requirements and populate initial deal data
+    if (!shared.dealData && shared.companies && shared.originLocations && shared.destinationLocations && shared.frequencies) {
+      shared.dealData = this.parseUserRequirementsToInitialDeal(shared.userRequirements, execRes);
+      console.log('📝 Data Collection Agent: Extracted initial deal data from user requirements');
+      console.log(`  Counterparty: ${shared.dealData.counterparty || 'Not specified'}`);
+      console.log(`  Product: ${shared.dealData.product || 'Not specified'}`);
+      console.log(`  Quantity: ${shared.dealData.quantity || 'Not specified'} gallons`);
+      console.log(`  Origin: ${shared.dealData.originLocation || 'Not specified'}`);
+      console.log(`  Destination: ${shared.dealData.destinationLocation || 'Not specified'}`);
+      console.log(`  Frequency: ${shared.dealData.frequency || 'Not specified'}`);
+    }
+
     console.log('💾 Data Collection Agent: Updated shared state');
     
     // Determine next action based on what we've collected
@@ -279,7 +291,7 @@ export class DataCollectionAgent extends Node<DealState> {
   // Helper method to call MCP tools
   private async callMCPTool(toolName: string, args: any): Promise<string> {
     return new Promise((resolve, reject) => {
-      const mcpPath = '/Users/nickbrooks/work/qde-agent/mcp/server/index.ts';
+      const mcpPath = '/Users/nickbrooks/work/alliance/qde-agent/mcp/server/index.ts';
       const child = spawn('npx', ['tsx', mcpPath]);
       
       let output = '';
@@ -332,6 +344,76 @@ export class DataCollectionAgent extends Node<DealState> {
       child.stdin.write(JSON.stringify(request) + '\n');
       child.stdin.end();
     });
+  }
+
+  // Smart parsing method to extract deal data from natural language
+  private parseUserRequirementsToInitialDeal(requirements: string, refData: any): any {
+    const dealData: any = {};
+    
+    // Extract counterparty
+    const counterpartyMatch = requirements.match(/(?:with|for)\s+([A-Z][A-Za-z\s&]+?)(?:\s+for|\s+to|\s*,|$)/i);
+    if (counterpartyMatch && refData.companies) {
+      const mentioned = counterpartyMatch[1].trim();
+      const found = refData.companies.find((c: any) => 
+        c.text.toLowerCase().includes(mentioned.toLowerCase()) ||
+        mentioned.toLowerCase().includes(c.text.toLowerCase())
+      );
+      dealData.counterparty = found?.text || mentioned;
+    }
+    
+    // Extract product
+    if (requirements.toLowerCase().includes('propane')) {
+      dealData.product = 'Propane';
+    } else if (requirements.toLowerCase().includes('gasoline')) {
+      dealData.product = 'Gasoline Regular Unleaded';
+    } else if (requirements.toLowerCase().includes('diesel')) {
+      dealData.product = 'Diesel';
+    } else {
+      dealData.product = 'Propane'; // Default
+    }
+    
+    // Extract quantity
+    const quantityMatch = requirements.match(/(\d+(?:,\d{3})*)\s*gallons?/i);
+    if (quantityMatch) {
+      dealData.quantity = parseInt(quantityMatch[1].replace(/,/g, ''));
+    }
+    
+    // Extract origin location
+    const fromMatch = requirements.match(/from\s+([A-Za-z\s]+?)(?:\s+to|\s*,|$)/i);
+    if (fromMatch && refData.originLocations) {
+      const mentioned = fromMatch[1].trim();
+      const found = refData.originLocations.find((l: any) => 
+        l.text.toLowerCase().includes(mentioned.toLowerCase()) ||
+        mentioned.toLowerCase().includes(l.text.toLowerCase())
+      );
+      dealData.originLocation = found?.text || mentioned;
+    }
+    
+    // Extract destination location
+    const toMatch = requirements.match(/to\s+([A-Za-z\s]+?)(?:\s*,|$)/i);
+    if (toMatch && refData.destinationLocations) {
+      const mentioned = toMatch[1].trim();
+      const found = refData.destinationLocations.find((l: any) => 
+        l.text.toLowerCase().includes(mentioned.toLowerCase()) ||
+        mentioned.toLowerCase().includes(l.text.toLowerCase())
+      );
+      dealData.destinationLocation = found?.text || mentioned;
+    }
+    
+    // Extract frequency
+    if (requirements.toLowerCase().includes('daily')) {
+      dealData.frequency = 'Daily';
+    } else if (requirements.toLowerCase().includes('weekly')) {
+      dealData.frequency = 'Weekly';
+    } else if (requirements.toLowerCase().includes('monthly')) {
+      dealData.frequency = 'Monthly';
+    } else if (requirements.toLowerCase().includes('quarterly')) {
+      dealData.frequency = 'Quarterly';
+    } else {
+      dealData.frequency = 'Monthly'; // Default
+    }
+    
+    return dealData;
   }
 
   // Mock data fetching methods (fallback when MCP fails)
