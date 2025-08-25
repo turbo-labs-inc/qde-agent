@@ -127,3 +127,6 @@ export interface ApiConfig {
   apiKey?: string;
   timeout?: number;
 }
+
+// Export conversation types for the new conversational system
+export * from './conversation';

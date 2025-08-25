@@ -8,11 +8,19 @@
  */
 
 import * as readline from 'readline';
-import { setupEnhancedInfrastructure, executeStandardDealCreation } from './src/setup-enhanced-infrastructure';
+import { 
+  setupEnhancedInfrastructure, 
+  executeStandardDealCreation,
+  executeExpressDealCreation 
+} from './src/setup-enhanced-infrastructure';
 
 const rl = readline.createInterface({
   input: process.stdin,
-  output: process.stdout
+  output: process.stdout,
+  terminal: true,           // Enable terminal features
+  historySize: 100,         // Keep command history
+  removeHistoryDuplicates: true,
+  completer: undefined      // Disable autocomplete to reduce lag
 });
 
 function askQuestion(question: string): Promise<string> {
@@ -21,18 +29,32 @@ function askQuestion(question: string): Promise<string> {
   });
 }
 
+let isProcessing = false;
+let fastMode = true; // Default to fast mode for better UX
+
 async function processUserRequest(request: string) {
   if (!request.trim()) {
     console.log('⚠️  Empty request, please try again.\n');
     return;
   }
   
+  if (isProcessing) {
+    console.log('⚠️  Already processing a request. Please wait...\n');
+    return;
+  }
+  
+  isProcessing = true;
   console.log(`\n🔄 Processing: "${request}"`);
   console.log('⏱️  Please wait...\n');
   
   try {
     const startTime = Date.now();
-    const result = await executeStandardDealCreation(request);
+    
+    // Use express mode in fast mode for better responsiveness
+    const result = fastMode 
+      ? await executeExpressDealCreation(request)
+      : await executeStandardDealCreation(request);
+    
     const duration = Date.now() - startTime;
     
     console.log(`\n${'='.repeat(50)}`);
@@ -65,6 +87,8 @@ async function processUserRequest(request: string) {
     
   } catch (error) {
     console.log(`\n❌ ERROR: ${error}\n`);
+  } finally {
+    isProcessing = false;
   }
 }
 
@@ -77,17 +101,28 @@ async function showExamples() {
   console.log('   • "15000 gallons gasoline with Energy Solutions from Fort Worth to Tulsa"\n');
 }
 
+let infrastructureReady = false;
+
+async function ensureInfrastructure() {
+  if (!infrastructureReady) {
+    console.log('🚀 Setting up infrastructure...');
+    await setupEnhancedInfrastructure();
+    infrastructureReady = true;
+    console.log('✅ Infrastructure ready!\n');
+  }
+}
+
 async function main() {
   console.log('🎯 QDE Agent System - Interactive Testing');
   console.log('==========================================\n');
   
-  console.log('🚀 Setting up infrastructure...');
-  await setupEnhancedInfrastructure();
-  console.log('✅ Infrastructure ready!\n');
+  await ensureInfrastructure();
   
   console.log('🎬 Welcome to the Interactive QDE Testing Tool!');
+  console.log('   ⚡ Fast mode enabled by default for better responsiveness');
   console.log('   Type your deal requests in natural language.');
   console.log('   Type "examples" to see sample requests.');
+  console.log('   Type "slow" to switch to standard mode (more retries).');
   console.log('   Type "quit" or "exit" to stop.\n');
   
   while (true) {
@@ -101,6 +136,12 @@ async function main() {
       
       if (input.toLowerCase().trim() === 'examples') {
         await showExamples();
+        continue;
+      }
+      
+      if (input.toLowerCase().trim() === 'slow' || input.toLowerCase().trim() === 'fast') {
+        fastMode = !fastMode;
+        console.log(`${fastMode ? '⚡' : '🐢'} Switched to ${fastMode ? 'FAST' : 'STANDARD'} mode - Using ${fastMode ? '60s' : '120s'} timeouts\n`);
         continue;
       }
       

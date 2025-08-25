@@ -40,9 +40,12 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "dev": "tsx src/index.ts",
-    "demo": "tsx src/demo-enhanced-infrastructure.ts",
     "mcp-server": "tsx mcp/server/index.ts",
     "mock-api": "tsx mock-api/server.ts",
+    "start-all": "node start-all.js",
+    "interactive": "npx tsx interactive-test.ts",
+    "paste-safe": "npx tsx interactive-test-paste-safe.ts",
+    "simple": "npx tsx interactive-test-simple.ts",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {

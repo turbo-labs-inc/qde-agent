@@ -1,6 +1,7 @@
 import { Node } from '../../src/pocket-flow';
 import { DealState } from '../../src/types';
-import { spawn } from 'child_process';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 interface DealCreationRequirements {
   dealPayload: any;
@@ -119,6 +120,12 @@ export class DealCreationAgent extends Node<DealState> {
     prepRes: DealCreationRequirements,
     execRes: DealCreationResults
   ): Promise<string> {
+    // Check if we're already in complete phase (prevents double execution)
+    if (shared.phase === 'complete') {
+      console.log('🛑 Deal Creation Agent: Already in complete phase, terminating workflow');
+      return ''; // Return empty to end the workflow
+    }
+
     if (execRes.success && execRes.dealId) {
       // Update shared state with deal ID and confirmation
       shared.dealId = execRes.dealId;
@@ -180,7 +187,7 @@ export class DealCreationAgent extends Node<DealState> {
     try {
       console.log('    🔗 Calling MCP manage-trade-deals with create action...');
       
-      const mcpResponse = await this.callMCPTool('manage-trade-deals', {
+      const mcpResponse = await this.callMCPTool('qde-manage-trade-deals', {
         action: 'create',
         dealData: dealPayload
       });
@@ -319,62 +326,46 @@ export class DealCreationAgent extends Node<DealState> {
     };
   }
 
-  // Helper method to call MCP tools (same pattern as other agents)
+  // Helper method to call MCP tools using proper MCP client
   private async callMCPTool(toolName: string, args: any): Promise<string> {
-    return new Promise((resolve, reject) => {
+    const client = new Client(
+      {
+        name: "qde-deal-creation-agent",
+        version: "1.0.0",
+      },
+      {
+        capabilities: {}
+      }
+    );
+
+    try {
+      // Connect to MCP server via stdio
       const mcpPath = '/Users/nickbrooks/work/alliance/qde-agent/mcp/server/index.ts';
-      const child = spawn('npx', ['tsx', mcpPath]);
-      
-      let output = '';
-      let error = '';
-
-      child.stdout.on('data', (data) => {
-        output += data.toString();
+      const transport = new StdioClientTransport({
+        command: 'npx',
+        args: ['tsx', mcpPath]
       });
 
-      child.stderr.on('data', (data) => {
-        error += data.toString();
+      await client.connect(transport);
+
+      // Call the tool
+      const result = await client.callTool({
+        name: toolName,
+        arguments: args
       });
 
-      child.on('close', (code) => {
-        if (code === 0) {
-          try {
-            // Parse JSON-RPC response
-            const lines = output.split('\n').filter(line => line.trim());
-            for (const line of lines) {
-              try {
-                const response = JSON.parse(line);
-                if (response.result && response.result.content) {
-                  resolve(response.result.content[0].text);
-                  return;
-                }
-              } catch (parseError) {
-                // Continue to next line
-              }
-            }
-            reject(new Error('No valid JSON-RPC response found'));
-          } catch (parseError) {
-            reject(new Error(`Failed to parse MCP response: ${parseError}`));
-          }
-        } else {
-          reject(new Error(`MCP call failed with code ${code}: ${error}`));
-        }
-      });
+      await client.close();
 
-      // Send the tool call request
-      const request = {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: {
-          name: toolName,
-          arguments: args
-        }
-      };
-      
-      child.stdin.write(JSON.stringify(request) + '\n');
-      child.stdin.end();
-    });
+      // Extract text from result
+      if (result.content && result.content.length > 0) {
+        return result.content[0].text || 'No content returned';
+      }
+
+      return 'Empty response from MCP tool';
+    } catch (error) {
+      console.error(`MCP client error for ${toolName}:`, error);
+      throw new Error(`MCP call failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   // Smart extraction methods

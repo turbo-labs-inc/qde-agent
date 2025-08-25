@@ -1,6 +1,7 @@
 import { Node } from '../../src/pocket-flow';
 import { DealState, PriceComponent, OpisPrice, PricingStructure } from '../../src/types';
-import { spawn } from 'child_process';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 interface PricingRequirements {
   locationId?: string;
@@ -154,7 +155,7 @@ export class PricingAgent extends Node<DealState> {
       console.log(`  🔗 Using MCP to fetch OPIS prices for location ${locationId}, product ${productId}`);
       
       const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-      const mcpResponse = await this.callMCPTool('get-market-pricing-data', {
+      const mcpResponse = await this.callMCPTool('qde-get-market-pricing-data', {
         type: 'opis-price',
         locationId: parseInt(locationId),
         productId: parseInt(productId),
@@ -190,7 +191,7 @@ export class PricingAgent extends Node<DealState> {
     try {
       console.log(`  🔗 Using MCP to fetch price components`);
       
-      const mcpResponse = await this.callMCPTool('get-market-pricing-data', {
+      const mcpResponse = await this.callMCPTool('qde-get-market-pricing-data', {
         type: 'price-components',
         id: 123 // Example price ID
       });
@@ -235,7 +236,7 @@ export class PricingAgent extends Node<DealState> {
     try {
       console.log(`  🔗 Using MCP to calculate location differential for location ${locationId}`);
       
-      const mcpResponse = await this.callMCPTool('calculate-trade-pricing', {
+      const mcpResponse = await this.callMCPTool('qde-calculate-trade-pricing', {
         type: 'location-diff-price',
         locationId: parseInt(locationId),
         productId: parseInt(productId),
@@ -275,7 +276,7 @@ export class PricingAgent extends Node<DealState> {
         "3": 2.91   // Future months
       };
       
-      const mcpResponse = await this.callMCPTool('calculate-trade-pricing', {
+      const mcpResponse = await this.callMCPTool('qde-calculate-trade-pricing', {
         type: 'base-price-default',
         priceDictionary,
         frequencyType: frequency,
@@ -347,62 +348,46 @@ export class PricingAgent extends Node<DealState> {
     };
   }
 
-  // Helper method to call MCP tools (same pattern as Data Collection Agent)
+  // Helper method to call MCP tools using proper MCP client
   private async callMCPTool(toolName: string, args: any): Promise<string> {
-    return new Promise((resolve, reject) => {
+    const client = new Client(
+      {
+        name: "qde-pricing-agent",
+        version: "1.0.0",
+      },
+      {
+        capabilities: {}
+      }
+    );
+
+    try {
+      // Connect to MCP server via stdio
       const mcpPath = '/Users/nickbrooks/work/alliance/qde-agent/mcp/server/index.ts';
-      const child = spawn('npx', ['tsx', mcpPath]);
-      
-      let output = '';
-      let error = '';
-
-      child.stdout.on('data', (data) => {
-        output += data.toString();
+      const transport = new StdioClientTransport({
+        command: 'npx',
+        args: ['tsx', mcpPath]
       });
 
-      child.stderr.on('data', (data) => {
-        error += data.toString();
+      await client.connect(transport);
+
+      // Call the tool
+      const result = await client.callTool({
+        name: toolName,
+        arguments: args
       });
 
-      child.on('close', (code) => {
-        if (code === 0) {
-          try {
-            // Parse JSON-RPC response
-            const lines = output.split('\n').filter(line => line.trim());
-            for (const line of lines) {
-              try {
-                const response = JSON.parse(line);
-                if (response.result && response.result.content) {
-                  resolve(response.result.content[0].text);
-                  return;
-                }
-              } catch (parseError) {
-                // Continue to next line
-              }
-            }
-            reject(new Error('No valid JSON-RPC response found'));
-          } catch (parseError) {
-            reject(new Error(`Failed to parse MCP response: ${parseError}`));
-          }
-        } else {
-          reject(new Error(`MCP call failed with code ${code}: ${error}`));
-        }
-      });
+      await client.close();
 
-      // Send the tool call request
-      const request = {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: {
-          name: toolName,
-          arguments: args
-        }
-      };
-      
-      child.stdin.write(JSON.stringify(request) + '\n');
-      child.stdin.end();
-    });
+      // Extract text from result
+      if (result.content && result.content.length > 0) {
+        return result.content[0].text || 'No content returned';
+      }
+
+      return 'Empty response from MCP tool';
+    } catch (error) {
+      console.error(`MCP client error for ${toolName}:`, error);
+      throw new Error(`MCP call failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   // Mock data methods for fallback

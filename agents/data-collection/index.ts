@@ -1,6 +1,7 @@
 import { Node } from '../../src/pocket-flow';
 import { DealState, Company, Location, Frequency } from '../../src/types';
-import { spawn } from 'child_process';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 export class DataCollectionAgent extends Node<DealState> {
   constructor(maxRetries = 3, wait = 1) {
@@ -131,7 +132,7 @@ export class DataCollectionAgent extends Node<DealState> {
     if (companyName) {
       try {
         console.log(`  🔗 Using MCP to find company: ${companyName}`);
-        const mcpResponse = await this.callMCPTool('search-trade-reference-data', {
+        const mcpResponse = await this.callMCPTool('qde-search-trade-reference-data', {
           type: 'companies',
           getByPrimaryMarketer: false
         });
@@ -174,7 +175,7 @@ export class DataCollectionAgent extends Node<DealState> {
   private async mcpFetchOriginLocations(): Promise<Location[]> {
     try {
       console.log(`  🔗 Using MCP to fetch origin locations`);
-      const mcpResponse = await this.callMCPTool('search-trade-reference-data', {
+      const mcpResponse = await this.callMCPTool('qde-search-trade-reference-data', {
         type: 'origin-locations',
         showFiltered: false
       });
@@ -196,7 +197,7 @@ export class DataCollectionAgent extends Node<DealState> {
   private async mcpFetchDestinationLocations(): Promise<Location[]> {
     try {
       console.log(`  🔗 Using MCP to fetch destination locations`);
-      const mcpResponse = await this.callMCPTool('search-trade-reference-data', {
+      const mcpResponse = await this.callMCPTool('qde-search-trade-reference-data', {
         type: 'destination-locations',
         showFiltered: false
       });
@@ -218,7 +219,7 @@ export class DataCollectionAgent extends Node<DealState> {
   private async mcpFetchFrequencies(): Promise<Frequency[]> {
     try {
       console.log(`  🔗 Using MCP to fetch frequencies`);
-      const mcpResponse = await this.callMCPTool('search-trade-reference-data', {
+      const mcpResponse = await this.callMCPTool('qde-search-trade-reference-data', {
         type: 'frequencies'
       });
       
@@ -288,62 +289,46 @@ export class DataCollectionAgent extends Node<DealState> {
     return frequencies;
   }
 
-  // Helper method to call MCP tools
+  // Helper method to call MCP tools using proper MCP client
   private async callMCPTool(toolName: string, args: any): Promise<string> {
-    return new Promise((resolve, reject) => {
+    const client = new Client(
+      {
+        name: "qde-data-collection-agent",
+        version: "1.0.0",
+      },
+      {
+        capabilities: {}
+      }
+    );
+
+    try {
+      // Connect to MCP server via stdio
       const mcpPath = '/Users/nickbrooks/work/alliance/qde-agent/mcp/server/index.ts';
-      const child = spawn('npx', ['tsx', mcpPath]);
-      
-      let output = '';
-      let error = '';
-
-      child.stdout.on('data', (data) => {
-        output += data.toString();
+      const transport = new StdioClientTransport({
+        command: 'npx',
+        args: ['tsx', mcpPath]
       });
 
-      child.stderr.on('data', (data) => {
-        error += data.toString();
+      await client.connect(transport);
+
+      // Call the tool
+      const result = await client.callTool({
+        name: toolName,
+        arguments: args
       });
 
-      child.on('close', (code) => {
-        if (code === 0) {
-          try {
-            // Parse JSON-RPC response
-            const lines = output.split('\n').filter(line => line.trim());
-            for (const line of lines) {
-              try {
-                const response = JSON.parse(line);
-                if (response.result && response.result.content) {
-                  resolve(response.result.content[0].text);
-                  return;
-                }
-              } catch (parseError) {
-                // Continue to next line
-              }
-            }
-            reject(new Error('No valid JSON-RPC response found'));
-          } catch (parseError) {
-            reject(new Error(`Failed to parse MCP response: ${parseError}`));
-          }
-        } else {
-          reject(new Error(`MCP call failed with code ${code}: ${error}`));
-        }
-      });
+      await client.close();
 
-      // Send the tool call request
-      const request = {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: {
-          name: toolName,
-          arguments: args
-        }
-      };
-      
-      child.stdin.write(JSON.stringify(request) + '\n');
-      child.stdin.end();
-    });
+      // Extract text from result
+      if (result.content && result.content.length > 0) {
+        return result.content[0].text || 'No content returned';
+      }
+
+      return 'Empty response from MCP tool';
+    } catch (error) {
+      console.error(`MCP client error for ${toolName}:`, error);
+      throw new Error(`MCP call failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   // Smart parsing method to extract deal data from natural language
@@ -372,6 +357,13 @@ export class DataCollectionAgent extends Node<DealState> {
       dealData.product = 'Propane'; // Default
     }
     
+    // Ensure default product ID mapping for pricing
+    if (!refData.productId) {
+      if (dealData.product === 'Diesel') refData.productId = '2';
+      else if (dealData.product === 'Gasoline Regular Unleaded') refData.productId = '5';
+      else refData.productId = '1'; // Propane
+    }
+    
     // Extract quantity
     const quantityMatch = requirements.match(/(\d+(?:,\d{3})*)\s*gallons?/i);
     if (quantityMatch) {
@@ -390,7 +382,7 @@ export class DataCollectionAgent extends Node<DealState> {
     }
     
     // Extract destination location
-    const toMatch = requirements.match(/to\s+([A-Za-z\s]+?)(?:\s*,|$)/i);
+    const toMatch = requirements.match(/to\s+([A-Za-z\s]+?)(?:\s*,|\s+delivery|$)/i);
     if (toMatch && refData.destinationLocations) {
       const mentioned = toMatch[1].trim();
       const found = refData.destinationLocations.find((l: any) => 
@@ -419,11 +411,12 @@ export class DataCollectionAgent extends Node<DealState> {
   // Mock data fetching methods (fallback when MCP fails)
   private async mockFetchCompanies(): Promise<Company[]> {
     return [
-      { value: "1001", text: "ABC Trading Company" },
-      { value: "1002", text: "XYZ Logistics Inc" },
-      { value: "1003", text: "Global Petroleum Corp" },
-      { value: "1004", text: "Energy Solutions LLC" },
-      { value: "1005", text: "Alliance Energy Partners" }
+      { value: "1001", text: "Houston Energy Trading" },
+      { value: "1002", text: "ABC Trading Company" },
+      { value: "1003", text: "XYZ Logistics Inc" },
+      { value: "1004", text: "Global Petroleum Corp" },
+      { value: "1005", text: "Energy Solutions LLC" },
+      { value: "1006", text: "Alliance Energy Partners" }
     ];
   }
 

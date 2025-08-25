@@ -172,6 +172,65 @@ Ensure Claude Code can access QDE MCP tools:
 - **Error recovery**: Guide users to correct invalid inputs
 - **Final confirmation**: Review all data before creating deal
 
+## 📋 Available Deal Options
+
+### 🏢 **Customer/Company Examples**
+*Use `qde-search-trade-reference-data` with type: "companies"*
+- ABC Energy Partners (ID: 1005)
+- Energy Solutions LLC (ID: 1004)
+- Global Energy Corp (ID: 1003)
+- Houston Energy Trading (ID: 1002)
+- Alliance Energy Partners (ID: 1001)
+- Texas Fuel Distributors (ID: 1006)
+- Southwest Gas Holdings (ID: 1007)
+- Midstream Energy Co (ID: 1008)
+
+### 🛢️ **Product Types Available**
+*Standard fuel products in the system*
+- **Propane** (ID: 1) - Most common, residential/commercial
+- **Gasoline Regular Unleaded** (ID: 2) - Automotive fuel
+- **Diesel** (ID: 3) - Commercial/industrial fuel
+- **Butane** (ID: 4) - Industrial applications
+- **Natural Gas** (ID: 5) - Pipeline gas
+
+### 🗺️ **Origin Location Examples** 
+*Use `qde-search-trade-reference-data` with type: "origin-locations"*
+- Houston Terminal (ID: 100) - Major Texas hub
+- Beaumont Terminal (ID: 101) - Gulf Coast refinery area
+- Corpus Christi Terminal (ID: 102) - South Texas port
+- Dallas Terminal (ID: 103) - North Texas distribution
+- Austin Terminal (ID: 104) - Central Texas hub
+- San Antonio Terminal (ID: 105) - South Central Texas
+- Tyler Terminal (ID: 106) - East Texas hub
+- Midland Terminal (ID: 107) - West Texas oil region
+
+### 🎯 **Destination Location Examples**
+*Use `qde-search-trade-reference-data` with type: "destination-locations"*
+- Dallas Hub (ID: 200) - Major metropolitan delivery
+- Austin Hub (ID: 201) - Capital city distribution
+- San Antonio Hub (ID: 202) - Military city delivery
+- Fort Worth Hub (ID: 203) - DFW area coverage
+- El Paso Hub (ID: 204) - West Texas border
+- Amarillo Hub (ID: 205) - Texas Panhandle
+- Lubbock Hub (ID: 206) - West Texas plains
+- Waco Hub (ID: 207) - Central Texas corridor
+
+### ⏰ **Delivery Frequency Options**
+*Use `qde-search-trade-reference-data` with type: "frequencies"*
+- **Daily** (ID: 1) - High-volume, consistent supply
+- **Weekly** (ID: 2) - Regular commercial delivery
+- **Monthly** (ID: 3) - Standard business frequency
+- **Quarterly** (ID: 4) - Seasonal or bulk contracts
+- **One-time** (ID: 5) - Spot market transactions
+
+### 📊 **Typical Quantity Ranges**
+*Volume amounts commonly traded*
+- **Small Commercial**: 1,000 - 5,000 gallons
+- **Medium Commercial**: 5,000 - 25,000 gallons  
+- **Large Commercial**: 25,000 - 100,000 gallons
+- **Industrial**: 100,000+ gallons
+- **Spot Market**: Variable, often 5,000 - 50,000 gallons
+
 ### ❌ **Behaviors to Avoid**
 - **Creating script files** to test MCP functionality
 - **Skipping validation** of user inputs
